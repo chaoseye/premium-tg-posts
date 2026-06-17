@@ -23,6 +23,9 @@ def main_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Как это работает?", callback_data="menu:help"),
             ],
             [
+                InlineKeyboardButton(text="Очистить хранилище", callback_data="storage:clear_prompt"),
+            ],
+            [
                 InlineKeyboardButton(text="AI: назвать emoji по ассетам", callback_data="mode:emoji_label_prompt"),
             ],
             [
@@ -84,5 +87,14 @@ def emoji_label_menu(index: int, total: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="К шагам", callback_data="menu:home"),
                 InlineKeyboardButton(text="База emoji", callback_data="menu:emojis"),
             ],
+        ]
+    )
+
+
+def clear_storage_confirm_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Да, очистить", callback_data="storage:clear_confirm")],
+            [InlineKeyboardButton(text="Отмена", callback_data="storage:clear_cancel")],
         ]
     )

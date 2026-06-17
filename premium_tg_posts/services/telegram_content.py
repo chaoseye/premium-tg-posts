@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,12 @@ from aiogram.enums import MessageEntityType
 from aiogram.types import Message, MessageEntity
 
 from premium_tg_posts.utils.text import relative_to, utf16_slice
+
+STICKER_SET_LINK_RE = re.compile(
+    r"(?:https?://)?(?:t\.me|telegram\.me)/(?:addemoji|addstickers)/([A-Za-z0-9_]+)|"
+    r"tg://addstickers\?set=([A-Za-z0-9_]+)",
+    re.IGNORECASE,
+)
 
 
 def message_text_and_entities(message: Message) -> tuple[str, list[MessageEntity]]:
@@ -68,6 +75,16 @@ def custom_emoji_entities(message: Message) -> list[dict[str, Any]]:
             }
         )
     return results
+
+
+def sticker_set_names(message: Message) -> list[str]:
+    text, _ = message_text_and_entities(message)
+    names: list[str] = []
+    for match in STICKER_SET_LINK_RE.finditer(text):
+        name = match.group(1) or match.group(2)
+        if name:
+            names.append(name)
+    return list(dict.fromkeys(names))
 
 
 def serializable_entities(message: Message) -> list[dict[str, Any]]:

@@ -5,6 +5,7 @@ Local aiogram 3.x Telegram bot for collecting premium/custom emoji, reference po
 The bot does not call OpenAI or any model API. It is only a convenient Telegram interface for:
 
 - saving premium/custom emoji IDs and downloaded sticker files;
+- importing whole emoji packs from `t.me/addemoji/...` links;
 - optionally labeling emoji in human language;
 - saving forwarded posts with text, entities, raw JSON, and media;
 - saving reusable text templates;
@@ -62,12 +63,13 @@ Commands are fallback controls. The normal UI is the inline menu:
 - `4. Готовые посты и отправка` - outbox files and manual send button.
 - `Что уже сохранено?` - storage counters.
 - `Как это работает?` - short workflow explanation.
+- `Очистить хранилище` - clears runtime storage after an inline confirmation, preserving the detected owner.
 - `AI: назвать emoji по ассетам` - save a prompt for Codex / Claude to label emoji by inspecting downloaded assets.
-- `Опц.: вручную назвать последний emoji` - optional human hint for the latest emoji.
+- `Опц.: вручную назвать emoji` - optional human hint for a selected emoji, with arrow navigation.
 
 ## Normal Workflow
 
-1. Send the bot a batch of premium/custom emoji.
+1. Send the bot a batch of premium/custom emoji, or send an emoji pack link like `https://t.me/addemoji/MarinEmojis1_by_e4zybot`.
 2. Optional: label the useful ones if you want extra human meaning. Codex or Claude can also inspect downloaded assets directly.
 3. Forward example posts to the bot.
 4. Save recurring copy patterns with `/template`.

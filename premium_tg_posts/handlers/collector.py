@@ -6,7 +6,7 @@ from aiogram import Bot, Router
 from aiogram.types import Message
 
 from premium_tg_posts.handlers.replies import answer_html, edit_or_answer_html
-from premium_tg_posts.services.emoji_collector import collect_custom_emojis
+from premium_tg_posts.services.emoji_collector import collect_custom_emoji_set, collect_custom_emojis
 from premium_tg_posts.services.post_collector import save_reference_post
 from premium_tg_posts.services.storage import LibraryStorage
 from premium_tg_posts.services.telegram_content import (
@@ -18,6 +18,7 @@ from premium_tg_posts.services.telegram_content import (
     raw_message,
     serializable_entities,
     split_title_and_body,
+    sticker_set_names,
 )
 from premium_tg_posts.ui.keyboards import after_collect_menu, main_menu
 from premium_tg_posts.utils.text import short_id, tg_emoji_html
@@ -38,22 +39,30 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
             if handled:
                 return
 
+    set_names = sticker_set_names(message)
     emoji_entities = custom_emoji_entities(message)
     status_message: Message | None = None
-    if emoji_entities:
+    if emoji_entities or set_names:
         unique_count = len(dict.fromkeys(row["custom_emoji_id"] for row in emoji_entities))
+        intro = [f"Принял emoji pack: <code>{escape(name)}</code>" for name in set_names]
+        if unique_count:
+            intro.append(f"Принял premium emoji: {unique_count}")
         status_message = await answer_html(
             message,
             "\n".join(
                 [
-                    f"Принял premium emoji: {unique_count}",
+                    *intro,
                     "Скачиваю ассеты и делаю PNG/SVG-превью.",
                     "Если emoji много, это может занять немного времени.",
                 ]
             ),
         )
 
-    emoji_rows = await collect_custom_emojis(bot, library, message)
+    emoji_rows: list[dict] = []
+    for set_name in set_names:
+        emoji_rows.extend(await collect_custom_emoji_set(bot, library, set_name))
+    emoji_rows.extend(await collect_custom_emojis(bot, library, message))
+    emoji_rows = dedupe_emoji_rows(emoji_rows)
 
     if is_forwarded(message):
         saved_path, media_count = await save_reference_post(bot, library, message)
@@ -86,6 +95,16 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         return
 
     if has_collectable_material(message):
+        if set_names:
+            await edit_or_answer_html(
+                message,
+                status_message,
+                "Не смог скачать custom emoji из набора:\n"
+                + "\n".join(f"- <code>{escape(name)}</code>" for name in set_names)
+                + "\n\nПроверь, что ссылка ведет на emoji pack и набор доступен боту.",
+                reply_markup=main_menu(),
+            )
+            return
         await edit_or_answer_html(
             message,
             status_message,
@@ -164,3 +183,15 @@ async def handle_user_mode(
         return True
 
     return False
+
+
+def dedupe_emoji_rows(rows: list[dict]) -> list[dict]:
+    result: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        emoji_id = row.get("custom_emoji_id", "")
+        if emoji_id in seen:
+            continue
+        seen.add(emoji_id)
+        result.append(row)
+    return result

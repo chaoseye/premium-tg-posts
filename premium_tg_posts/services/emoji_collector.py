@@ -50,6 +50,37 @@ async def collect_custom_emojis(bot: Bot, library: LibraryStorage, message: Mess
     return saved
 
 
+async def collect_custom_emoji_set(bot: Bot, library: LibraryStorage, set_name: str) -> list[dict[str, Any]]:
+    try:
+        sticker_set = await bot.get_sticker_set(name=set_name)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Could not fetch sticker set %s: %s", set_name, exc)
+        return []
+
+    saved: list[dict[str, Any]] = []
+    for sticker in sticker_set.stickers:
+        emoji_id = str(sticker.custom_emoji_id or "")
+        if not emoji_id:
+            continue
+        record = {
+            "alt": sticker.emoji,
+            "sticker_emoji": sticker.emoji,
+            "sticker_set_name": sticker.set_name or sticker_set.name,
+            "sticker_set_title": sticker_set.title,
+            "file_id": sticker.file_id,
+            "file_unique_id": sticker.file_unique_id,
+            "is_animated": sticker.is_animated,
+            "is_video": sticker.is_video,
+            "source": f"sticker_set:{set_name}",
+        }
+        asset_path = await download_emoji_asset(bot, library, emoji_id, sticker)
+        if asset_path:
+            record["asset_path"] = relative_to(asset_path, library.root)
+            record.update(prepare_emoji_asset(asset_path, library.emoji_previews_dir, library.root))
+        saved.append(library.upsert_emoji(emoji_id, record))
+    return saved
+
+
 async def download_emoji_asset(bot: Bot, library: LibraryStorage, emoji_id: str, sticker: Sticker) -> Path | None:
     try:
         tg_file = await bot.get_file(sticker.file_id)

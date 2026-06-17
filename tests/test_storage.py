@@ -6,6 +6,7 @@ from pathlib import Path
 
 from premium_tg_posts.services.storage import LibraryStorage
 from premium_tg_posts.services.asset_converter import prepare_emoji_asset
+from premium_tg_posts.services.telegram_content import sticker_set_names
 from premium_tg_posts.utils.text import tg_emoji_html, utf16_slice
 
 
@@ -85,6 +86,26 @@ class StorageTests(unittest.TestCase):
             self.assertIn("Name them in Russian", text)
             self.assertIn("5368324170671202286", text)
 
+    def test_clear_runtime_preserves_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = LibraryStorage(Path(tmp))
+            storage.ensure()
+            storage.register_owner(user_id=1, chat_id=10, username="owner")
+            storage.upsert_emoji("5368324170671202286", {"asset_path": "emoji-assets/5368324170671202286.webp"})
+            (storage.emoji_assets_dir / "5368324170671202286.webp").write_bytes(b"asset")
+            post_dir = storage.create_post_dir("post")
+            (post_dir / "index.md").write_text("post", encoding="utf-8")
+            (storage.outbox_dir / "draft.html").write_text("<b>Hello</b>", encoding="utf-8")
+
+            stats = storage.clear_runtime()
+
+            self.assertEqual(stats.emojis, 0)
+            self.assertEqual(stats.posts, 0)
+            self.assertEqual(stats.drafts, 0)
+            self.assertEqual(storage.load_state()["owner"]["user_id"], 1)
+            self.assertFalse(any(path.name != ".gitkeep" for path in storage.emoji_assets_dir.iterdir()))
+            self.assertFalse(any(path.name != ".gitkeep" for path in storage.posts_dir.iterdir()))
+
     def test_webp_preview_conversion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -97,6 +118,15 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(record["asset_type"], "static_webp")
             self.assertEqual(record["preview_type"], "png_static")
             self.assertTrue((root / record["preview_path"]).exists())
+
+    def test_sticker_set_names_from_links(self) -> None:
+        class FakeMessage:
+            text = "one https://t.me/addemoji/MarinEmojis1_by_e4zybot two tg://addstickers?set=Pack_2"
+            caption = None
+            entities = None
+            caption_entities = None
+
+        self.assertEqual(sticker_set_names(FakeMessage()), ["MarinEmojis1_by_e4zybot", "Pack_2"])
 
 
 if __name__ == "__main__":

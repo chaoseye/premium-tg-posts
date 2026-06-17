@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from premium_tg_posts.handlers.replies import answer_html
 from premium_tg_posts.services.drafts import DraftSendError, send_html_draft
 from premium_tg_posts.services.storage import LibraryStorage
-from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, emoji_label_menu, main_menu
+from premium_tg_posts.ui.keyboards import back_menu, clear_storage_confirm_menu, drafts_menu, emoji_label_menu, main_menu
 from premium_tg_posts.utils.text import short_id, tg_emoji_html
 
 router = Router(name="callbacks")
@@ -74,6 +74,43 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
 
     if data == "menu:owner":
         await edit_or_answer(message, render_owner(library), reply_markup=back_menu())
+        return
+
+    if data == "storage:clear_prompt":
+        if not is_owner_callback(callback, library):
+            await edit_or_answer(message, "Очистка доступна только owner.", reply_markup=main_menu())
+            return
+        await edit_or_answer(
+            message,
+            "<b>Очистить хранилище?</b>\n\n"
+            "Будут удалены emoji, ассеты, превью, AI-label requests, шаблоны, reference posts, raw-файлы и outbox drafts.\n"
+            "Owner сохранится, чтобы бот не потерял получателя.",
+            reply_markup=clear_storage_confirm_menu(),
+        )
+        return
+
+    if data == "storage:clear_cancel":
+        await edit_or_answer(message, "Ок, ничего не удаляю.", reply_markup=main_menu())
+        return
+
+    if data == "storage:clear_confirm":
+        if not is_owner_callback(callback, library):
+            await edit_or_answer(message, "Очистка доступна только owner.", reply_markup=main_menu())
+            return
+        stats = library.clear_runtime(preserve_owner=True)
+        await edit_or_answer(
+            message,
+            "\n".join(
+                [
+                    "<b>Хранилище очищено</b>",
+                    f"premium emoji: {stats.emojis}",
+                    f"шаблоны постов: {stats.templates}",
+                    f"примеры постов: {stats.posts}",
+                    f"готовые HTML-посты: {stats.drafts}",
+                ]
+            ),
+            reply_markup=main_menu(),
+        )
         return
 
     if data == "mode:label_last":
@@ -150,6 +187,12 @@ async def edit_or_answer(message: Message, text: str, reply_markup=None) -> None
         await message.edit_text(text, reply_markup=reply_markup, disable_web_page_preview=True)
     except TelegramBadRequest:
         await message.answer(text, reply_markup=reply_markup, disable_web_page_preview=True)
+
+
+def is_owner_callback(callback: CallbackQuery, library: LibraryStorage) -> bool:
+    owner = library.load_state().get("owner", {})
+    owner_id = owner.get("user_id")
+    return not owner_id or int(owner_id) == int(callback.from_user.id)
 
 
 async def show_emoji_label_picker(message: Message, library: LibraryStorage, user_id: int, index: int) -> None:

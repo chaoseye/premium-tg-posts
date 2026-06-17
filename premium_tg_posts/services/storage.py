@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,38 @@ class LibraryStorage:
             posts=len([path for path in self.posts_dir.iterdir() if path.is_dir()]) if self.posts_dir.exists() else 0,
             drafts=len(list(self.outbox_dir.glob("*.html"))),
         )
+
+    def clear_runtime(self, preserve_owner: bool = True) -> StorageStats:
+        state = self.load_state()
+        owner = state.get("owner", {}) if preserve_owner else {}
+
+        for path in (self.emojis_json, self.premium_emojis_md):
+            if path.exists():
+                path.unlink()
+
+        for directory in (
+            self.emoji_assets_dir,
+            self.emoji_previews_dir,
+            self.templates_dir,
+            self.posts_dir,
+            self.outbox_dir,
+            self.raw_dir,
+            self.emoji_label_requests_dir,
+        ):
+            self._clear_directory(directory)
+
+        self._write_json(
+            self.state_json,
+            {
+                "updated_at": utc_now_iso(),
+                "owner": owner,
+                "sent_drafts": {},
+                "failed_drafts": {},
+                "user_modes": {},
+            },
+        )
+        self.ensure()
+        return self.stats()
 
     def load_emojis(self) -> dict[str, Any]:
         return self._read_json(self.emojis_json, {"updated_at": utc_now_iso(), "emojis": {}})
@@ -451,6 +484,19 @@ class LibraryStorage:
         candidate.mkdir(parents=True, exist_ok=False)
         (candidate / "media").mkdir(exist_ok=True)
         return candidate
+
+    def _clear_directory(self, directory: Path) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        for child in directory.iterdir():
+            if child.name == ".gitkeep":
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        gitkeep = directory / ".gitkeep"
+        if not gitkeep.exists():
+            gitkeep.write_text("\n", encoding="utf-8")
 
     def _read_json(self, path: Path, default: dict[str, Any]) -> dict[str, Any]:
         if not path.exists():
