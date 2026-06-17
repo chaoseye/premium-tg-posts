@@ -5,11 +5,12 @@ from html import escape
 from aiogram import Bot, Router
 from aiogram.types import Message
 
-from premium_tg_posts.handlers.replies import answer_html
+from premium_tg_posts.handlers.replies import answer_html, edit_or_answer_html
 from premium_tg_posts.services.emoji_collector import collect_custom_emojis
 from premium_tg_posts.services.post_collector import save_reference_post
 from premium_tg_posts.services.storage import LibraryStorage
 from premium_tg_posts.services.telegram_content import (
+    custom_emoji_entities,
     has_collectable_material,
     is_forwarded,
     message_text_and_entities,
@@ -37,19 +38,37 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
             if handled:
                 return
 
+    emoji_entities = custom_emoji_entities(message)
+    status_message: Message | None = None
+    if emoji_entities:
+        unique_count = len(dict.fromkeys(row["custom_emoji_id"] for row in emoji_entities))
+        status_message = await answer_html(
+            message,
+            "\n".join(
+                [
+                    f"Принял premium emoji: {unique_count}",
+                    "Скачиваю ассеты и делаю PNG/SVG-превью.",
+                    "Если emoji много, это может занять немного времени.",
+                ]
+            ),
+        )
+
     emoji_rows = await collect_custom_emojis(bot, library, message)
 
     if is_forwarded(message):
         saved_path, media_count = await save_reference_post(bot, library, message)
-        await message.answer(
+        await edit_or_answer_html(
+            message,
+            status_message,
             f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count}",
             reply_markup=main_menu(),
         )
         return
 
     if emoji_rows:
-        await answer_html(
+        await edit_or_answer_html(
             message,
+            status_message,
             "\n".join(
                 [
                     f"Сохранил premium emoji: {len(emoji_rows)}",
@@ -67,7 +86,9 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         return
 
     if has_collectable_material(message):
-        await message.answer(
+        await edit_or_answer_html(
+            message,
+            status_message,
             "Я получил материал, но не понял, куда его сохранить.\n\n"
             "Нажми <b>Добавить стиль / структуру</b> или <b>Добавить пример поста</b>, а потом отправь материал еще раз.",
             reply_markup=main_menu(),
