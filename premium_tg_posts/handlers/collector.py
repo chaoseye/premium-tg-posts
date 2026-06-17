@@ -34,7 +34,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         mode = library.peek_user_mode(message.from_user.id)
         if mode:
             library.pop_user_mode(message.from_user.id)
-            handled = await handle_user_mode(message, bot, library, mode.get("mode", ""))
+            handled = await handle_user_mode(message, bot, library, mode.get("mode", ""), mode.get("data", {}))
             if handled:
                 return
 
@@ -95,18 +95,30 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         )
 
 
-async def handle_user_mode(message: Message, bot: Bot, library: LibraryStorage, mode: str) -> bool:
+async def handle_user_mode(
+    message: Message,
+    bot: Bot,
+    library: LibraryStorage,
+    mode: str,
+    mode_data: dict | None = None,
+) -> bool:
     if mode == "label_last":
         label, _ = message_text_and_entities(message)
         label = label.strip()
         if not label:
             await message.answer("Не вижу текста названия. Нажми кнопку еще раз и отправь короткое описание текстом.", reply_markup=main_menu())
             return True
-        record = library.update_emoji_label("last", label)
+        selector = str((mode_data or {}).get("emoji_id") or "last")
+        record = library.update_emoji_label(selector, label)
         if not record:
             await message.answer("Пока нечего называть: сначала отправь premium emoji.", reply_markup=main_menu())
             return True
-        await message.answer("Добавил название к последнему premium emoji.", reply_markup=main_menu())
+        emoji_id = record.get("custom_emoji_id", "")
+        alt = record.get("alt", "") or record.get("sticker_emoji", "") or "🎁"
+        await message.answer(
+            f"Добавил название: {tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(label)}",
+            reply_markup=main_menu(),
+        )
         return True
 
     if mode == "emoji_label_prompt":

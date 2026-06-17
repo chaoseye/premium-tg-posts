@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from premium_tg_posts.handlers.replies import answer_html
 from premium_tg_posts.services.drafts import DraftSendError, send_html_draft
 from premium_tg_posts.services.storage import LibraryStorage
-from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, main_menu
+from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, emoji_label_menu, main_menu
 from premium_tg_posts.utils.text import short_id, tg_emoji_html
 
 router = Router(name="callbacks")
@@ -77,23 +77,17 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         return
 
     if data == "mode:label_last":
-        if callback.from_user:
-            library.set_user_mode(callback.from_user.id, "label_last")
-        latest = library.latest_emoji()
-        if not latest:
-            await edit_or_answer(message, "Пока нет emoji для названия. Сначала отправь premium emoji пачкой.", reply_markup=back_menu())
+        await show_emoji_label_picker(message, library, callback.from_user.id, 0)
+        return
+
+    if data.startswith("emoji_label:"):
+        if data == "emoji_label:noop":
             return
-        emoji_id = latest.get("custom_emoji_id", "")
-        alt = latest.get("alt", "") or latest.get("sticker_emoji", "") or "🎁"
-        labels = ", ".join(latest.get("labels", [])) or "пока без названия"
-        await edit_or_answer(
-            message,
-            "Отправь короткое название вот для этого emoji:\n\n"
-            f"{tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code>\n"
-            f"Сейчас: {escape(labels)}\n\n"
-            "Это необязательно. Нужно только если хочешь вручную подсказать смысл: например, <code>золотой огонь</code>, <code>VIP</code>, <code>стрелка вверх</code>.",
-            reply_markup=back_menu(),
-        )
+        try:
+            index = int(data.rsplit(":", 1)[1])
+        except ValueError:
+            index = 0
+        await show_emoji_label_picker(message, library, callback.from_user.id, index)
         return
 
     if data == "mode:emoji_label_prompt":
@@ -156,6 +150,29 @@ async def edit_or_answer(message: Message, text: str, reply_markup=None) -> None
         await message.edit_text(text, reply_markup=reply_markup, disable_web_page_preview=True)
     except TelegramBadRequest:
         await message.answer(text, reply_markup=reply_markup, disable_web_page_preview=True)
+
+
+async def show_emoji_label_picker(message: Message, library: LibraryStorage, user_id: int, index: int) -> None:
+    rows = library.emoji_records(sort_by="last_seen_at", reverse=True)
+    if not rows:
+        await edit_or_answer(message, "Пока нет emoji для названия. Сначала отправь premium emoji пачкой.", reply_markup=back_menu())
+        return
+
+    index %= len(rows)
+    item = rows[index]
+    emoji_id = item.get("custom_emoji_id", "")
+    alt = item.get("alt", "") or item.get("sticker_emoji", "") or "🎁"
+    labels = ", ".join(item.get("labels", [])) or "пока без названия"
+    library.set_user_mode(user_id, "label_last", {"emoji_id": emoji_id, "index": index})
+
+    await edit_or_answer(
+        message,
+        "Отправь короткое название вот для этого emoji:\n\n"
+        f"{tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code>\n"
+        f"Сейчас: {escape(labels)}\n\n"
+        "Стрелками можно выбрать другой emoji. Когда нужный выбран, просто отправь название текстом.",
+        reply_markup=emoji_label_menu(index, len(rows)),
+    )
 
 
 def render_emojis(library: LibraryStorage) -> str:

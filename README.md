@@ -24,7 +24,7 @@ npm install
 ```
 
 For `.webm` emoji previews, install `ffmpeg` and make sure it is available in `PATH`.
-For `.tgs` emoji previews, the bot uses the GitHub `attikusfinch/lottie-to-svg` converter to render a Lottie frame through the SVG renderer, then saves an AI-friendly raster preview with `sharp`. The default raster format is `.png`; set `EMOJI_PREVIEW_FORMAT=webp` if you prefer `.webp`. Static `.webp` emoji previews are converted with Pillow.
+For `.tgs` emoji previews, the bot uses the GitHub `attikusfinch/lottie-to-svg` converter to render frame 3 through the SVG renderer, then saves an AI-friendly raster preview with `sharp`. The default raster format is `.png`; set `EMOJI_PREVIEW_FORMAT=webp` if you prefer `.webp`. Static `.webp` emoji previews are converted with Pillow.
 
 3. Create `.env`:
 

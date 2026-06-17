@@ -26,7 +26,7 @@ def main_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="AI: назвать emoji по ассетам", callback_data="mode:emoji_label_prompt"),
             ],
             [
-                InlineKeyboardButton(text="Опц.: вручную назвать последний emoji", callback_data="mode:label_last"),
+                InlineKeyboardButton(text="Опц.: вручную назвать emoji", callback_data="mode:label_last"),
             ],
         ]
     )
@@ -64,7 +64,25 @@ def after_collect_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="AI: назвать emoji по ассетам", callback_data="mode:emoji_label_prompt"),
             ],
             [
-                InlineKeyboardButton(text="Опц.: вручную назвать последний", callback_data="mode:label_last"),
+                InlineKeyboardButton(text="Опц.: вручную назвать emoji", callback_data="mode:label_last"),
+            ],
+        ]
+    )
+
+
+def emoji_label_menu(index: int, total: int) -> InlineKeyboardMarkup:
+    previous_index = (index - 1) % total if total else 0
+    next_index = (index + 1) % total if total else 0
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="← Назад", callback_data=f"emoji_label:{previous_index}"),
+                InlineKeyboardButton(text=f"{index + 1}/{total}", callback_data="emoji_label:noop"),
+                InlineKeyboardButton(text="Вперед →", callback_data=f"emoji_label:{next_index}"),
+            ],
+            [
+                InlineKeyboardButton(text="К шагам", callback_data="menu:home"),
+                InlineKeyboardButton(text="База emoji", callback_data="menu:emojis"),
             ],
         ]
     )

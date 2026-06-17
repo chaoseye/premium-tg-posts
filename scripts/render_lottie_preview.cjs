@@ -5,6 +5,8 @@ const zlib = require("node:zlib");
 const renderSvg = require("lottie-to-svg");
 const sharp = require("sharp");
 
+const PREVIEW_FRAME = 3;
+
 function usage() {
   console.error("Usage: node scripts/render_lottie_preview.cjs <input.tgs|input.json> <output.svg> <output.png|output.webp> [format]");
 }
@@ -17,10 +19,11 @@ function readAnimationData(inputPath) {
   return JSON.parse(text);
 }
 
-function midFrame(animationData) {
+function previewFrame(animationData) {
   const start = Number.isFinite(Number(animationData.ip)) ? Number(animationData.ip) : 0;
   const end = Number.isFinite(Number(animationData.op)) ? Number(animationData.op) : start + 1;
-  return Math.max(0, Math.floor((start + end) / 2));
+  const frame = start + PREVIEW_FRAME;
+  return Math.min(frame, Math.max(start, end - 1));
 }
 
 async function main() {
@@ -37,7 +40,7 @@ async function main() {
   }
 
   const animationData = readAnimationData(inputPath);
-  const frame = midFrame(animationData);
+  const frame = previewFrame(animationData);
   const svg = await renderSvg(animationData, {}, frame);
 
   fs.mkdirSync(path.dirname(svgPath), { recursive: true });
