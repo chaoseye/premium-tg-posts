@@ -25,6 +25,7 @@ from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, main_menu
 router = Router(name="commands")
 
 HELP_TEXT = """<b>Сборщик материалов для Codex / Claude</b>
+Автор: @fiscaldev
 
 Рабочий порядок:
 1. Отправь premium emoji пачкой.
