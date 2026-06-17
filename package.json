@@ -1,0 +1,15 @@
+{
+  "name": "premium-tg-posts",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "convert:lottie": "node scripts/render_lottie_preview.cjs"
+  },
+  "dependencies": {
+    "lottie-to-svg": "github:attikusfinch/lottie-to-svg",
+    "sharp": "^0.35.1"
+  },
+  "overrides": {
+    "jsdom": "^22.1.0"
+  }
+}

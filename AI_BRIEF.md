@@ -22,7 +22,7 @@ Labels are optional human hints, not required metadata. If a label is missing or
 
 Asset type notes:
 
-- `animated TGS/Lottie` means the original Telegram animation is saved as `.tgs`; a mid-frame `.svg` preview is saved in `storage/emoji-previews`. If SVG export fails, an embedded `.html` Lottie preview is saved instead.
+- `animated TGS/Lottie -> SVG -> PNG` or `animated TGS/Lottie -> SVG -> WEBP` means the original Telegram animation is saved as `.tgs`; the bot renders a Lottie frame through the SVG renderer, keeps the intermediate `.svg`, and saves an AI-friendly raster preview in `storage/emoji-previews`.
 - `video WEBM animation` means the original animation is `.webm`; a first-frame `.jpg` preview is saved in `storage/emoji-previews`.
 - `static WEBP image` means the original static emoji is `.webp`; a `.png` preview is saved in `storage/emoji-previews`.
 

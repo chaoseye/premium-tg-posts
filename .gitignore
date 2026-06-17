@@ -1,8 +1,10 @@
 .env
 .venv/
+node_modules/
 __pycache__/
 *.pyc
 .pytest_cache/
+tmp/
 logs/*.log
 
 # Runtime data. Keep .gitkeep files if you want to commit the empty layout.

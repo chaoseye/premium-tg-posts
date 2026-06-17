@@ -20,9 +20,11 @@ The bot does not call OpenAI or any model API. It is only a convenient Telegram 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+npm install
 ```
 
-For `.webm` emoji previews, install `ffmpeg` and make sure it is available in `PATH`. `.tgs` previews are converted with Python `lottie`; `.webp` previews are converted with Pillow.
+For `.webm` emoji previews, install `ffmpeg` and make sure it is available in `PATH`.
+For `.tgs` emoji previews, the bot uses the GitHub `attikusfinch/lottie-to-svg` converter to render a Lottie frame through the SVG renderer, then saves an AI-friendly raster preview with `sharp`. The default raster format is `.png`; set `EMOJI_PREVIEW_FORMAT=webp` if you prefer `.webp`. Static `.webp` emoji previews are converted with Pillow.
 
 3. Create `.env`:
 
@@ -88,7 +90,7 @@ The owner chat is saved in `storage/bot-state.json`. Auto-push uses that chat.
 - `storage/emojis.json` - machine-readable emoji data.
 - `storage/bot-state.json` - owner, user modes, and sent draft tracking.
 - `storage/emoji-assets/` - downloaded `.webp`, `.tgs`, or `.webm` emoji files. These files are what the AI agent should inspect when labels are missing.
-- `storage/emoji-previews/` - converted previews for quick inspection: `.tgs` -> mid-frame `.svg`, `.webm` -> first-frame `.jpg`, `.webp` -> `.png`.
+- `storage/emoji-previews/` - converted previews for quick inspection: `.tgs` -> `.svg` plus AI-friendly `.png` or `.webp`, `.webm` -> first-frame `.jpg`, `.webp` -> `.png`.
 - `storage/emoji-label-requests/` - prompts for Codex / Claude to label emoji by inspecting assets.
 - `storage/templates/` - reusable text templates.
 - `storage/posts/` - forwarded reference posts and media.
