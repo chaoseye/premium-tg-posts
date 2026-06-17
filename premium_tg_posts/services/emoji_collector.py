@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +15,24 @@ from premium_tg_posts.utils.text import relative_to
 
 LOGGER = logging.getLogger(__name__)
 
+EmojiProgressCallback = Callable[[int, int, str], Awaitable[None]]
 
-async def collect_custom_emojis(bot: Bot, library: LibraryStorage, message: Message) -> list[dict[str, Any]]:
+
+async def collect_custom_emojis(
+    bot: Bot,
+    library: LibraryStorage,
+    message: Message,
+    progress: EmojiProgressCallback | None = None,
+) -> list[dict[str, Any]]:
     rows = custom_emoji_entities(message)
     if not rows:
         return []
 
     ids = list(dict.fromkeys(row["custom_emoji_id"] for row in rows))
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        rows_by_id.setdefault(row["custom_emoji_id"], row)
+    unique_rows = [rows_by_id[emoji_id] for emoji_id in ids]
     stickers_by_id: dict[str, Sticker] = {}
     try:
         stickers = await bot.get_custom_emoji_stickers(custom_emoji_ids=ids)
@@ -29,7 +41,8 @@ async def collect_custom_emojis(bot: Bot, library: LibraryStorage, message: Mess
         LOGGER.warning("Could not fetch custom emoji stickers: %s", exc)
 
     saved: list[dict[str, Any]] = []
-    for row in rows:
+    total = len(unique_rows)
+    for index, row in enumerate(unique_rows, start=1):
         emoji_id = row["custom_emoji_id"]
         sticker = stickers_by_id.get(emoji_id)
         record = {
@@ -47,10 +60,17 @@ async def collect_custom_emojis(bot: Bot, library: LibraryStorage, message: Mess
                 record["asset_path"] = relative_to(asset_path, library.root)
                 record.update(prepare_emoji_asset(asset_path, library.emoji_previews_dir, library.root))
         saved.append(library.upsert_emoji(emoji_id, record))
+        if progress:
+            await progress(index, total, "premium emoji")
     return saved
 
 
-async def collect_custom_emoji_set(bot: Bot, library: LibraryStorage, set_name: str) -> list[dict[str, Any]]:
+async def collect_custom_emoji_set(
+    bot: Bot,
+    library: LibraryStorage,
+    set_name: str,
+    progress: EmojiProgressCallback | None = None,
+) -> list[dict[str, Any]]:
     try:
         sticker_set = await bot.get_sticker_set(name=set_name)
     except Exception as exc:  # noqa: BLE001
@@ -58,10 +78,13 @@ async def collect_custom_emoji_set(bot: Bot, library: LibraryStorage, set_name: 
         return []
 
     saved: list[dict[str, Any]] = []
+    total = sum(1 for sticker in sticker_set.stickers if sticker.custom_emoji_id)
+    processed = 0
     for sticker in sticker_set.stickers:
         emoji_id = str(sticker.custom_emoji_id or "")
         if not emoji_id:
             continue
+        processed += 1
         record = {
             "alt": sticker.emoji,
             "sticker_emoji": sticker.emoji,
@@ -78,6 +101,8 @@ async def collect_custom_emoji_set(bot: Bot, library: LibraryStorage, set_name: 
             record["asset_path"] = relative_to(asset_path, library.root)
             record.update(prepare_emoji_asset(asset_path, library.emoji_previews_dir, library.root))
         saved.append(library.upsert_emoji(emoji_id, record))
+        if progress:
+            await progress(processed, total, f"emoji pack {set_name}")
     return saved
 
 

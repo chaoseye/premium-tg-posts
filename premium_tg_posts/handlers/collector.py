@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import time
 from html import escape
 
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import Message
 
 from premium_tg_posts.handlers.replies import answer_html, edit_or_answer_html
@@ -26,6 +28,44 @@ from premium_tg_posts.utils.text import short_id, tg_emoji_html
 router = Router(name="collector")
 
 
+class EmojiDownloadProgress:
+    def __init__(self, status_message: Message | None, intro_lines: list[str], min_interval: float = 1.0) -> None:
+        self.status_message = status_message
+        self.intro_lines = intro_lines
+        self.min_interval = min_interval
+        self.last_edit_at = 0.0
+        self.last_text = ""
+
+    async def update(self, processed: int, total: int, label: str) -> None:
+        if not self.status_message or total <= 0:
+            return
+        now = time.monotonic()
+        force = processed >= total
+        if not force and now - self.last_edit_at < self.min_interval:
+            return
+
+        text = "\n".join(
+            [
+                *self.intro_lines,
+                "",
+                "<b>Прогресс скачивания</b>",
+                f"{escape(label)}: <code>{processed}/{total}</code>",
+                "Готовлю ассеты и превью: SVG/PNG/WEBP.",
+            ]
+        )
+        if text == self.last_text:
+            return
+
+        try:
+            await self.status_message.edit_text(text, disable_web_page_preview=True)
+            self.last_edit_at = now
+            self.last_text = text
+        except TelegramRetryAfter as exc:
+            self.last_edit_at = now + float(exc.retry_after)
+        except TelegramBadRequest:
+            pass
+
+
 @router.message()
 async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -> None:
     if message.text and message.text.startswith("/"):
@@ -42,6 +82,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
     set_names = sticker_set_names(message)
     emoji_entities = custom_emoji_entities(message)
     status_message: Message | None = None
+    progress_reporter: EmojiDownloadProgress | None = None
     if emoji_entities or set_names:
         unique_count = len(dict.fromkeys(row["custom_emoji_id"] for row in emoji_entities))
         intro = [f"Принял emoji pack: <code>{escape(name)}</code>" for name in set_names]
@@ -57,11 +98,26 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
                 ]
             ),
         )
+        progress_reporter = EmojiDownloadProgress(status_message, intro)
 
     emoji_rows: list[dict] = []
     for set_name in set_names:
-        emoji_rows.extend(await collect_custom_emoji_set(bot, library, set_name))
-    emoji_rows.extend(await collect_custom_emojis(bot, library, message))
+        emoji_rows.extend(
+            await collect_custom_emoji_set(
+                bot,
+                library,
+                set_name,
+                progress=progress_reporter.update if progress_reporter else None,
+            )
+        )
+    emoji_rows.extend(
+        await collect_custom_emojis(
+            bot,
+            library,
+            message,
+            progress=progress_reporter.update if progress_reporter else None,
+        )
+    )
     emoji_rows = dedupe_emoji_rows(emoji_rows)
 
     if is_forwarded(message):

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup, Message
 
 
@@ -19,6 +21,13 @@ async def edit_or_answer_html(
         try:
             await status_message.edit_text(text, disable_web_page_preview=True, reply_markup=reply_markup)
             return
+        except TelegramRetryAfter as exc:
+            await asyncio.sleep(float(exc.retry_after))
+            try:
+                await status_message.edit_text(text, disable_web_page_preview=True, reply_markup=reply_markup)
+                return
+            except (TelegramBadRequest, TelegramRetryAfter):
+                pass
         except TelegramBadRequest:
             pass
     await answer_html(source_message, text, reply_markup=reply_markup)
