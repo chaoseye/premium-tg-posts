@@ -9,8 +9,17 @@ from premium_tg_posts.handlers.replies import answer_html
 from premium_tg_posts.services.emoji_collector import collect_custom_emojis
 from premium_tg_posts.services.post_collector import save_reference_post
 from premium_tg_posts.services.storage import LibraryStorage
-from premium_tg_posts.services.telegram_content import has_collectable_material, is_forwarded
-from premium_tg_posts.utils.text import short_id
+from premium_tg_posts.services.telegram_content import (
+    has_collectable_material,
+    is_forwarded,
+    message_text_and_entities,
+    message_title,
+    raw_message,
+    serializable_entities,
+    split_title_and_body,
+)
+from premium_tg_posts.ui.keyboards import after_collect_menu, main_menu
+from premium_tg_posts.utils.text import short_id, tg_emoji_html
 
 router = Router(name="collector")
 
@@ -20,11 +29,22 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
     if message.text and message.text.startswith("/"):
         return
 
+    if message.from_user:
+        mode = library.peek_user_mode(message.from_user.id)
+        if mode:
+            library.pop_user_mode(message.from_user.id)
+            handled = await handle_user_mode(message, bot, library, mode.get("mode", ""))
+            if handled:
+                return
+
     emoji_rows = await collect_custom_emojis(bot, library, message)
 
     if is_forwarded(message):
         saved_path, media_count = await save_reference_post(bot, library, message)
-        await answer_html(message, f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count}")
+        await message.answer(
+            f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count}",
+            reply_markup=main_menu(),
+        )
         return
 
     if emoji_rows:
@@ -34,19 +54,80 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
                 [
                     f"Сохранил premium emoji: {len(emoji_rows)}",
                     *[
-                        f"{escape(row.get('alt', '') or row.get('sticker_emoji', '') or 'emoji')} <code>{short_id(row['custom_emoji_id'])}</code>"
+                        f"{tg_emoji_html(row['custom_emoji_id'], row.get('alt', '') or row.get('sticker_emoji', '') or '🎁')} <code>{short_id(row['custom_emoji_id'])}</code> - {escape(row.get('asset_type_label') or row.get('asset_type') or 'asset saved')}"
                         for row in emoji_rows[:20]
                     ],
                     "",
-                    "Подписать последний: <code>/label last описание</code>",
-                    "Подписать конкретный: <code>/label short_id описание</code>",
+                    "Эмодзи импортированы: ID сохранены, ассеты скачаны.",
+                    "Теперь добавь стиль/структуру или пример поста, чтобы Codex / Claude понял, как писать.",
                 ]
             ),
+            reply_markup=after_collect_menu(),
         )
         return
 
     if has_collectable_material(message):
-        await answer_html(
-            message,
-            "Материал получил, но сам по себе не сохраняю как шаблон. Используй <code>/template</code>, <code>/post</code> или перешли готовый пост.",
+        await message.answer(
+            "Я получил материал, но не понял, куда его сохранить.\n\n"
+            "Нажми <b>Добавить стиль / структуру</b> или <b>Добавить пример поста</b>, а потом отправь материал еще раз.",
+            reply_markup=main_menu(),
         )
+
+
+async def handle_user_mode(message: Message, bot: Bot, library: LibraryStorage, mode: str) -> bool:
+    if mode == "label_last":
+        label, _ = message_text_and_entities(message)
+        label = label.strip()
+        if not label:
+            await message.answer("Не вижу текста названия. Нажми кнопку еще раз и отправь короткое описание текстом.", reply_markup=main_menu())
+            return True
+        record = library.update_emoji_label("last", label)
+        if not record:
+            await message.answer("Пока нечего называть: сначала отправь premium emoji.", reply_markup=main_menu())
+            return True
+        await message.answer("Добавил название к последнему premium emoji.", reply_markup=main_menu())
+        return True
+
+    if mode == "emoji_label_prompt":
+        prompt, _ = message_text_and_entities(message)
+        prompt = prompt.strip()
+        if not prompt:
+            await message.answer("Не вижу текста промпта. Нажми кнопку еще раз и отправь промпт текстом.", reply_markup=main_menu())
+            return True
+        path = library.create_emoji_label_request(prompt)
+        await message.answer(
+            "Сохранил задачу для AI-подписи emoji:\n"
+            f"<code>{path.relative_to(library.root).as_posix()}</code>\n\n"
+            "Теперь в Codex / Claude можно написать: «прочитай последний emoji-label-request и подпиши emoji по ассетам».",
+            reply_markup=main_menu(),
+        )
+        return True
+
+    if mode == "template":
+        text, _ = message_text_and_entities(message)
+        text = text.strip()
+        if not text:
+            await message.answer("Стиль/структура должны быть текстом. Нажми кнопку еще раз и отправь правила текстом.", reply_markup=main_menu())
+            return True
+        title, body = split_title_and_body(text)
+        if not body:
+            title = message_title(message, "template")
+            body = text
+        path = library.save_template(title, body, serializable_entities(message), raw_message(message))
+        await message.answer(
+            f"Сохранил стиль/структуру: <code>{path.relative_to(library.root).as_posix()}</code>\n\n"
+            "Теперь можно добавить пример поста или попросить Codex / Claude собрать готовый текст.",
+            reply_markup=main_menu(),
+        )
+        return True
+
+    if mode == "post":
+        saved_path, media_count = await save_reference_post(bot, library, message)
+        await message.answer(
+            f"Сохранил пример поста: <code>{saved_path}</code>\nmedia files: {media_count}\n\n"
+            "Теперь Codex / Claude сможет ориентироваться на этот стиль.",
+            reply_markup=main_menu(),
+        )
+        return True
+
+    return False

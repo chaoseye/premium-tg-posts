@@ -28,25 +28,32 @@ class LibraryStorage:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.emoji_assets_dir = root / "emoji-assets"
+        self.emoji_previews_dir = root / "emoji-previews"
         self.templates_dir = root / "templates"
         self.posts_dir = root / "posts"
         self.outbox_dir = root / "outbox"
         self.raw_dir = root / "raw"
+        self.emoji_label_requests_dir = root / "emoji-label-requests"
         self.emojis_json = root / "emojis.json"
+        self.state_json = root / "bot-state.json"
         self.premium_emojis_md = root / "premium-emojis.md"
 
     def ensure(self) -> None:
         for directory in (
             self.root,
             self.emoji_assets_dir,
+            self.emoji_previews_dir,
             self.templates_dir,
             self.posts_dir,
             self.outbox_dir,
             self.raw_dir,
+            self.emoji_label_requests_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
         if not self.emojis_json.exists():
             self._write_json(self.emojis_json, {"updated_at": utc_now_iso(), "emojis": {}})
+        if not self.state_json.exists():
+            self._write_json(self.state_json, self._default_state())
         if not self.premium_emojis_md.exists():
             self.render_emojis_markdown()
 
@@ -61,6 +68,112 @@ class LibraryStorage:
 
     def load_emojis(self) -> dict[str, Any]:
         return self._read_json(self.emojis_json, {"updated_at": utc_now_iso(), "emojis": {}})
+
+    def load_state(self) -> dict[str, Any]:
+        return self._read_json(self.state_json, self._default_state())
+
+    def save_state(self, state: dict[str, Any]) -> None:
+        state["updated_at"] = utc_now_iso()
+        self._write_json(self.state_json, state)
+
+    def register_owner(
+        self,
+        user_id: int,
+        chat_id: int,
+        username: str | None = None,
+        full_name: str | None = None,
+        source: str = "auto",
+        configured_owner_id: int | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
+        state = self.load_state()
+        owner = state.setdefault("owner", {})
+        expected_id = configured_owner_id or owner.get("user_id")
+
+        if expected_id and int(expected_id) != int(user_id):
+            return False, owner
+
+        changed = not owner.get("user_id")
+        owner.update(
+            {
+                "user_id": int(user_id),
+                "chat_id": int(chat_id),
+                "username": username,
+                "full_name": full_name,
+                "source": "env" if configured_owner_id else source,
+                "last_seen_at": utc_now_iso(),
+            }
+        )
+        owner.setdefault("first_seen_at", utc_now_iso())
+        self.save_state(state)
+        return changed, owner
+
+    def owner_chat_id(self) -> int | None:
+        owner = self.load_state().get("owner", {})
+        chat_id = owner.get("chat_id")
+        return int(chat_id) if chat_id else None
+
+    def is_draft_sent(self, draft: Path) -> bool:
+        state = self.load_state()
+        key = self._draft_key(draft)
+        return key in state.get("sent_drafts", {})
+
+    def is_draft_failed(self, draft: Path) -> bool:
+        state = self.load_state()
+        key = self._draft_key(draft)
+        return key in state.get("failed_drafts", {})
+
+    def mark_draft_sent(self, draft: Path, message_id: int | None = None) -> None:
+        state = self.load_state()
+        sent_drafts = state.setdefault("sent_drafts", {})
+        key = self._draft_key(draft)
+        sent_drafts[key] = {
+            "path": relative_to(draft, self.root),
+            "mtime": draft.stat().st_mtime,
+            "size": draft.stat().st_size,
+            "message_id": message_id,
+            "sent_at": utc_now_iso(),
+        }
+        self.save_state(state)
+
+    def mark_draft_failed(self, draft: Path, error: str) -> None:
+        state = self.load_state()
+        failed_drafts = state.setdefault("failed_drafts", {})
+        key = self._draft_key(draft)
+        failed_drafts[key] = {
+            "path": relative_to(draft, self.root),
+            "mtime": draft.stat().st_mtime,
+            "size": draft.stat().st_size,
+            "error": error,
+            "failed_at": utc_now_iso(),
+        }
+        self.save_state(state)
+
+    def pending_drafts(self) -> list[Path]:
+        return [
+            draft
+            for draft in reversed(self.list_drafts())
+            if not self.is_draft_sent(draft) and not self.is_draft_failed(draft)
+        ]
+
+    def set_user_mode(self, user_id: int, mode: str, data: dict[str, Any] | None = None) -> None:
+        state = self.load_state()
+        user_modes = state.setdefault("user_modes", {})
+        user_modes[str(user_id)] = {
+            "mode": mode,
+            "data": data or {},
+            "created_at": utc_now_iso(),
+        }
+        self.save_state(state)
+
+    def pop_user_mode(self, user_id: int) -> dict[str, Any] | None:
+        state = self.load_state()
+        user_modes = state.setdefault("user_modes", {})
+        mode = user_modes.pop(str(user_id), None)
+        self.save_state(state)
+        return mode
+
+    def peek_user_mode(self, user_id: int) -> dict[str, Any] | None:
+        return self.load_state().get("user_modes", {}).get(str(user_id))
 
     def upsert_emoji(self, emoji_id: str, record: dict[str, Any]) -> dict[str, Any]:
         data = self.load_emojis()
@@ -101,6 +214,68 @@ class LibraryStorage:
         self.render_emojis_markdown()
         return record
 
+    def latest_emoji(self) -> dict[str, Any] | None:
+        records = self.emoji_records(sort_by="last_seen_at", reverse=True)
+        return records[0] if records else None
+
+    def emoji_records(self, sort_by: str = "first_seen_at", reverse: bool = False) -> list[dict[str, Any]]:
+        data = self.load_emojis()
+        return sorted(data.get("emojis", {}).values(), key=lambda item: item.get(sort_by, ""), reverse=reverse)
+
+    def create_emoji_label_request(self, prompt: str) -> Path:
+        request_path = self._unique_file(
+            self.emoji_label_requests_dir,
+            f"{local_stamp()}-emoji-label-request",
+            ".md",
+        )
+        rows = self.emoji_records(sort_by="last_seen_at", reverse=True)
+        lines = [
+            "# Emoji Label Request",
+            "",
+            f"- created_at: {utc_now_iso()}",
+            f"- prompt: {prompt}",
+            "",
+            "## Task",
+            "",
+            "Inspect the downloaded emoji assets and add concise human labels to `storage/emojis.json`.",
+            "After editing labels, re-render `storage/premium-emojis.md` with:",
+            "",
+            "```powershell",
+            "python -B -c \"from pathlib import Path; from premium_tg_posts.services.storage import LibraryStorage; LibraryStorage(Path('storage')).render_emojis_markdown()\"",
+            "```",
+            "",
+            "## Emoji Assets",
+            "",
+            "| Current label | Alt | Type | Short ID | Custom emoji ID | Asset | Preview | HTML tag |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for item in rows:
+            emoji_id = item.get("custom_emoji_id", "")
+            labels = ", ".join(item.get("labels", [])) or "unlabeled"
+            alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+            asset_type = item.get("asset_type_label", "") or item.get("asset_type", "")
+            asset = item.get("asset_path", "")
+            preview = item.get("preview_path", "")
+            html_tag = f'<tg-emoji emoji-id="{emoji_id}">{alt}</tg-emoji>'
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _md_cell(labels),
+                        _md_cell(alt),
+                        _md_cell(asset_type),
+                        f"`{short_id(emoji_id)}`",
+                        f"`{emoji_id}`",
+                        _md_cell(asset),
+                        _md_cell(preview),
+                        f"`{html_tag}`",
+                    ]
+                )
+                + " |"
+            )
+        request_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return request_path
+
     def resolve_emoji_id(self, selector: str, data: dict[str, Any] | None = None) -> str | None:
         data = data or self.load_emojis()
         emojis = data.get("emojis", {})
@@ -124,16 +299,19 @@ class LibraryStorage:
         lines = [
             "# Premium Emojis",
             "",
-            "This file is generated by the local Telegram collector bot. Edit labels through the bot when possible.",
+            "This file is generated by the local Telegram collector bot.",
+            "Labels are optional human hints. The source of truth is the custom emoji ID plus the downloaded asset file.",
             "",
-            "| Label | Alt | Short ID | Custom emoji ID | HTML tag | Asset | Tags |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| Label (optional) | Alt | Type | Short ID | Custom emoji ID | HTML tag | Asset | Preview | Tags |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for item in emojis:
             emoji_id = item.get("custom_emoji_id", "")
             labels = ", ".join(item.get("labels", [])) or "unlabeled"
             alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+            asset_type = item.get("asset_type_label", "") or item.get("asset_type", "")
             asset = item.get("asset_path", "")
+            preview = item.get("preview_path", "")
             tags = ", ".join(item.get("tags", []))
             html_tag = f'<tg-emoji emoji-id="{emoji_id}">{alt}</tg-emoji>'
             lines.append(
@@ -142,10 +320,12 @@ class LibraryStorage:
                     [
                         _md_cell(labels),
                         _md_cell(alt),
+                        _md_cell(asset_type),
                         f"`{short_id(emoji_id)}`",
                         f"`{emoji_id}`",
                         f"`{html_tag}`",
                         _md_cell(asset),
+                        _md_cell(preview),
                         _md_cell(tags),
                     ]
                 )
@@ -154,9 +334,10 @@ class LibraryStorage:
         lines.extend(
             [
                 "",
-                "## Codex Usage",
+                "## AI Agent Usage",
                 "",
-                "Use the `HTML tag` values when drafting Telegram posts. Keep normal post text in HTML format and send via `/send_draft latest` after saving a file in `storage/outbox`.",
+                "Use the `HTML tag` values when drafting Telegram posts. Inspect downloaded files in `storage/emoji-assets` when labels are missing or unclear.",
+                "Keep normal post text in HTML format and save the final draft in `storage/outbox`.",
             ]
         )
         self.premium_emojis_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -220,7 +401,7 @@ class LibraryStorage:
             "",
             fenced_json(json.dumps(entities, ensure_ascii=False, indent=2)),
             "",
-            "## Notes For Codex",
+            "## Notes For AI Agents",
             "",
             "- Treat this as a reference post: keep the useful structure and tone, do not copy blindly.",
             "- If premium emoji entities are present, prefer matching saved entries from `storage/premium-emojis.md`.",
@@ -280,6 +461,16 @@ class LibraryStorage:
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
         tmp.replace(path)
+
+    def _default_state(self) -> dict[str, Any]:
+        return {"updated_at": utc_now_iso(), "owner": {}, "sent_drafts": {}, "failed_drafts": {}, "user_modes": {}}
+
+    def _draft_key(self, draft: Path) -> str:
+        try:
+            stat = draft.stat()
+        except FileNotFoundError:
+            return relative_to(draft, self.root)
+        return f"{relative_to(draft, self.root)}:{stat.st_mtime_ns}:{stat.st_size}"
 
 
 def _md_cell(value: str) -> str:

@@ -50,6 +50,12 @@ def html_code(value: str) -> str:
     return f"<code>{escape(value)}</code>"
 
 
+def tg_emoji_html(emoji_id: str, fallback: str | None) -> str:
+    safe_id = escape(emoji_id, quote=True)
+    safe_fallback = escape(fallback or "🎁")
+    return f'<tg-emoji emoji-id="{safe_id}">{safe_fallback}</tg-emoji>'
+
+
 def utf16_slice(text: str, offset: int, length: int) -> str:
     start = _utf16_index_to_py_index(text, offset)
     end = _utf16_index_to_py_index(text, offset + length)

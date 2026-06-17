@@ -1,2 +1,4 @@
 aiogram==3.29.0
+lottie==0.7.2
+pillow==12.0.0
 python-dotenv==1.0.1

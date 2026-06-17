@@ -3,11 +3,15 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+logs/*.log
 
 # Runtime data. Keep .gitkeep files if you want to commit the empty layout.
 storage/emojis.json
+storage/bot-state.json
 storage/premium-emojis.md
 storage/emoji-assets/*
+storage/emoji-label-requests/*
+storage/emoji-previews/*
 storage/posts/*
 storage/templates/*
 storage/raw/*

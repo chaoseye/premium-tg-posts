@@ -7,6 +7,7 @@ from typing import Any
 from aiogram import Bot
 from aiogram.types import Message, Sticker
 
+from premium_tg_posts.services.asset_converter import prepare_emoji_asset
 from premium_tg_posts.services.storage import LibraryStorage
 from premium_tg_posts.services.telegram_content import custom_emoji_entities
 from premium_tg_posts.utils.text import relative_to
@@ -44,6 +45,7 @@ async def collect_custom_emojis(bot: Bot, library: LibraryStorage, message: Mess
             asset_path = await download_emoji_asset(bot, library, emoji_id, sticker)
             if asset_path:
                 record["asset_path"] = relative_to(asset_path, library.root)
+                record.update(prepare_emoji_asset(asset_path, library.emoji_previews_dir, library.root))
         saved.append(library.upsert_emoji(emoji_id, record))
     return saved
 

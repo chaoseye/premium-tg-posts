@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from premium_tg_posts.services.storage import LibraryStorage
-from premium_tg_posts.utils.text import utf16_slice
+from premium_tg_posts.services.asset_converter import prepare_emoji_asset
+from premium_tg_posts.utils.text import tg_emoji_html, utf16_slice
 
 
 class StorageTests(unittest.TestCase):
@@ -38,8 +39,64 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(storage.resolve_draft("latest"), draft)
             self.assertEqual(storage.resolve_draft("draft.html"), draft)
 
+    def test_owner_and_sent_draft_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = LibraryStorage(Path(tmp))
+            storage.ensure()
+            changed, owner = storage.register_owner(user_id=1, chat_id=10, username="owner")
+            rejected, _ = storage.register_owner(user_id=2, chat_id=20, username="other")
+            draft = storage.outbox_dir / "draft.html"
+            draft.write_text("<b>Hello</b>", encoding="utf-8")
+
+            self.assertTrue(changed)
+            self.assertEqual(owner["chat_id"], 10)
+            self.assertFalse(rejected)
+            self.assertFalse(storage.is_draft_sent(draft))
+            self.assertFalse(storage.is_draft_failed(draft))
+            storage.mark_draft_sent(draft, message_id=123)
+            self.assertTrue(storage.is_draft_sent(draft))
+            storage.mark_draft_failed(draft, error="bad html")
+            self.assertTrue(storage.is_draft_failed(draft))
+
     def test_utf16_slice_handles_non_bmp(self) -> None:
         self.assertEqual(utf16_slice("A🔥B", 1, 2), "🔥")
+
+    def test_tg_emoji_html(self) -> None:
+        self.assertEqual(
+            tg_emoji_html("5368324170671202286", "🎁"),
+            '<tg-emoji emoji-id="5368324170671202286">🎁</tg-emoji>',
+        )
+
+    def test_create_emoji_label_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = LibraryStorage(Path(tmp))
+            storage.ensure()
+            storage.upsert_emoji(
+                "5368324170671202286",
+                {
+                    "alt": "🎁",
+                    "asset_path": "emoji-assets/5368324170671202286.webp",
+                },
+            )
+
+            request_path = storage.create_emoji_label_request("Name them in Russian")
+            text = request_path.read_text(encoding="utf-8")
+
+            self.assertIn("Name them in Russian", text)
+            self.assertIn("5368324170671202286", text)
+
+    def test_webp_preview_conversion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "emoji.webp"
+            from PIL import Image
+
+            Image.new("RGBA", (8, 8), (255, 0, 0, 255)).save(source)
+            record = prepare_emoji_asset(source, root / "previews", root)
+
+            self.assertEqual(record["asset_type"], "static_webp")
+            self.assertEqual(record["preview_type"], "png_static")
+            self.assertTrue((root / record["preview_path"]).exists())
 
 
 if __name__ == "__main__":
