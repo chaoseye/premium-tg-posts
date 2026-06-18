@@ -13,6 +13,7 @@ storage/bot-state.json
 storage/premium-emojis.md
 storage/emoji-assets/*
 storage/emoji-label-requests/*
+storage/post-requests/*
 storage/emoji-previews/*
 storage/posts/*
 storage/templates/*

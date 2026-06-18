@@ -86,6 +86,20 @@ class StorageTests(unittest.TestCase):
             self.assertIn("Name them in Russian", text)
             self.assertIn("5368324170671202286", text)
 
+    def test_create_post_generation_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = LibraryStorage(Path(tmp))
+            storage.ensure()
+            post_dir = storage.create_post_dir("reference")
+            (post_dir / "index.md").write_text("reference", encoding="utf-8")
+
+            request_path = storage.create_post_generation_request("Пост про новый flow")
+            text = request_path.read_text(encoding="utf-8")
+
+            self.assertIn("Пост про новый flow", text)
+            self.assertIn("storage/outbox", text)
+            self.assertIn("posts/", text)
+
     def test_clear_runtime_preserves_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             storage = LibraryStorage(Path(tmp))
@@ -95,6 +109,7 @@ class StorageTests(unittest.TestCase):
             (storage.emoji_assets_dir / "5368324170671202286.webp").write_bytes(b"asset")
             post_dir = storage.create_post_dir("post")
             (post_dir / "index.md").write_text("post", encoding="utf-8")
+            (storage.post_generation_requests_dir / "request.md").write_text("topic", encoding="utf-8")
             (storage.outbox_dir / "draft.html").write_text("<b>Hello</b>", encoding="utf-8")
 
             stats = storage.clear_runtime()
@@ -105,6 +120,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(storage.load_state()["owner"]["user_id"], 1)
             self.assertFalse(any(path.name != ".gitkeep" for path in storage.emoji_assets_dir.iterdir()))
             self.assertFalse(any(path.name != ".gitkeep" for path in storage.posts_dir.iterdir()))
+            self.assertFalse(any(path.name != ".gitkeep" for path in storage.post_generation_requests_dir.iterdir()))
 
     def test_webp_preview_conversion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,7 +137,7 @@ class StorageTests(unittest.TestCase):
 
     def test_sticker_set_names_from_links(self) -> None:
         class FakeMessage:
-            text = "one https://t.me/addemoji/MarinEmojis1_by_e4zybot two tg://addstickers?set=Pack_2"
+            text = "one https://t.me/addemoji/MarinEmojis1_by_e4zybot\ntg://addstickers?set=Pack_2"
             caption = None
             entities = None
             caption_entities = None

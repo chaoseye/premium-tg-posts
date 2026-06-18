@@ -26,6 +26,7 @@ from premium_tg_posts.ui.keyboards import after_collect_menu, main_menu
 from premium_tg_posts.utils.text import short_id, tg_emoji_html
 
 router = Router(name="collector")
+MAX_STICKER_SET_LINKS = 5
 
 
 class EmojiDownloadProgress:
@@ -79,13 +80,17 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
             if handled:
                 return
 
-    set_names = sticker_set_names(message)
+    all_set_names = sticker_set_names(message)
+    set_names = all_set_names[:MAX_STICKER_SET_LINKS]
+    skipped_set_count = max(0, len(all_set_names) - len(set_names))
     emoji_entities = custom_emoji_entities(message)
     status_message: Message | None = None
     progress_reporter: EmojiDownloadProgress | None = None
     if emoji_entities or set_names:
         unique_count = len(dict.fromkeys(row["custom_emoji_id"] for row in emoji_entities))
         intro = [f"Принял emoji pack: <code>{escape(name)}</code>" for name in set_names]
+        if skipped_set_count:
+            intro.append(f"Беру первые {MAX_STICKER_SET_LINKS} ссылок, остальные {skipped_set_count} отправь следующим сообщением.")
         if unique_count:
             intro.append(f"Принял premium emoji: {unique_count}")
         status_message = await answer_html(
@@ -125,8 +130,9 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         await edit_or_answer_html(
             message,
             status_message,
-            f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count}",
-            reply_markup=main_menu(),
+            f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count} (медиа не сохраняю)\n\n"
+            "Дальше можно подписать emoji или сразу поставить тему для генерации поста.",
+            reply_markup=after_collect_menu(),
         )
         return
 
@@ -143,7 +149,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
                     ],
                     "",
                     "Эмодзи импортированы: ID сохранены, ассеты скачаны.",
-                    "Теперь добавь стиль/структуру или пример поста, чтобы Codex / Claude понял, как писать.",
+                    "Теперь нафорварди посты-референсы. Когда контекст готов, подпиши emoji или поставь тему для генерации поста.",
                 ]
             ),
             reply_markup=after_collect_menu(),
@@ -151,7 +157,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         return
 
     if has_collectable_material(message):
-        if set_names:
+        if all_set_names:
             await edit_or_answer_html(
                 message,
                 status_message,
@@ -211,6 +217,22 @@ async def handle_user_mode(
         )
         return True
 
+    if mode == "post_topic":
+        topic, _ = message_text_and_entities(message)
+        topic = topic.strip()
+        if not topic:
+            await message.answer("Не вижу текст темы. Нажми кнопку еще раз и отправь тему обычным текстом.", reply_markup=main_menu())
+            return True
+        path = library.create_post_generation_request(topic)
+        await message.answer(
+            "Сохранил задачу на генерацию поста:\n"
+            f"<code>{path.relative_to(library.root).as_posix()}</code>\n\n"
+            "Теперь в Codex / Claude можно написать: «прочитай последний post-generation-request и собери Telegram HTML-пост». "
+            "Когда агент положит HTML в <code>storage/outbox</code>, бот отправит его сам.",
+            reply_markup=main_menu(),
+        )
+        return True
+
     if mode == "template":
         text, _ = message_text_and_entities(message)
         text = text.strip()
@@ -232,7 +254,7 @@ async def handle_user_mode(
     if mode == "post":
         saved_path, media_count = await save_reference_post(bot, library, message)
         await message.answer(
-            f"Сохранил пример поста: <code>{saved_path}</code>\nmedia files: {media_count}\n\n"
+            f"Сохранил пример поста: <code>{saved_path}</code>\nmedia files: {media_count} (медиа не сохраняю)\n\n"
             "Теперь Codex / Claude сможет ориентироваться на этот стиль.",
             reply_markup=main_menu(),
         )

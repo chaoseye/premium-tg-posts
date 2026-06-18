@@ -35,6 +35,7 @@ class LibraryStorage:
         self.outbox_dir = root / "outbox"
         self.raw_dir = root / "raw"
         self.emoji_label_requests_dir = root / "emoji-label-requests"
+        self.post_generation_requests_dir = root / "post-requests"
         self.emojis_json = root / "emojis.json"
         self.state_json = root / "bot-state.json"
         self.premium_emojis_md = root / "premium-emojis.md"
@@ -49,6 +50,7 @@ class LibraryStorage:
             self.outbox_dir,
             self.raw_dir,
             self.emoji_label_requests_dir,
+            self.post_generation_requests_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
         if not self.emojis_json.exists():
@@ -83,6 +85,7 @@ class LibraryStorage:
             self.outbox_dir,
             self.raw_dir,
             self.emoji_label_requests_dir,
+            self.post_generation_requests_dir,
         ):
             self._clear_directory(directory)
 
@@ -311,6 +314,49 @@ class LibraryStorage:
         request_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return request_path
 
+    def create_post_generation_request(self, topic: str) -> Path:
+        request_path = self._unique_file(
+            self.post_generation_requests_dir,
+            f"{local_stamp()}-post-generation-request",
+            ".md",
+        )
+        posts = sorted(
+            [path for path in self.posts_dir.iterdir() if path.is_dir()],
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        templates = sorted(self.templates_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
+        lines = [
+            "# Post Generation Request",
+            "",
+            f"- created_at: {utc_now_iso()}",
+            f"- topic: {topic}",
+            "",
+            "## Task",
+            "",
+            "Generate a medium-length Telegram HTML post for the topic above.",
+            "Use premium emoji through `<tg-emoji emoji-id=\"...\">fallback</tg-emoji>` tags from `storage/premium-emojis.md`.",
+            "Use saved reference posts for style, but do not copy them blindly.",
+            "Save the final HTML draft into `storage/outbox`.",
+            "",
+            "## Context",
+            "",
+            f"- emoji catalog: `{relative_to(self.premium_emojis_md, self.root)}`",
+            f"- reference posts: {len(posts)}",
+            f"- style/templates: {len(templates)}",
+            "",
+            "## Latest Reference Posts",
+            "",
+            markdown_list(f"`{relative_to(path / 'index.md', self.root)}`" for path in posts[:10]),
+            "",
+            "## Latest Style Templates",
+            "",
+            markdown_list(f"`{relative_to(path, self.root)}`" for path in templates[:10]),
+            "",
+        ]
+        request_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return request_path
+
     def resolve_emoji_id(self, selector: str, data: dict[str, Any] | None = None) -> str | None:
         data = data or self.load_emojis()
         emojis = data.get("emojis", {})
@@ -418,6 +464,7 @@ class LibraryStorage:
             + (f" ({item.get('note')})" if item.get("note") else "")
             for item in media_files
         ]
+        media_text = markdown_list(media_lines) if media_lines else "_Media files are intentionally not saved._"
         self._write_json(post_dir / "message.json", raw_message)
         self._write_json(post_dir / "entities.json", entities)
         body = [
@@ -432,7 +479,7 @@ class LibraryStorage:
             "",
             "## Media",
             "",
-            markdown_list(media_lines),
+            media_text,
             "",
             "## Entities",
             "",

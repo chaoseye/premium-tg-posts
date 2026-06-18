@@ -7,8 +7,9 @@ The bot does not call OpenAI or any model API. It is only a convenient Telegram 
 - saving premium/custom emoji IDs and downloaded sticker files;
 - importing whole emoji packs from `t.me/addemoji/...` links;
 - optionally labeling emoji in human language;
-- saving forwarded posts with text, entities, raw JSON, and media;
+- saving forwarded posts with text, entities, and raw JSON, without media files;
 - saving reusable text templates;
+- saving post-generation requests for Codex / Claude;
 - sending AI-generated HTML drafts from `storage/outbox`;
 - auto-pushing new drafts to the detected owner.
 
@@ -51,29 +52,29 @@ python run_bot.py
 - `/label last описание` - optionally label the most recently seen emoji.
 - `/template Название\nтекст шаблона` - save a text template.
 - `/template` as a reply - save the replied message as a template.
-- `/post` as a reply - save the replied message as a reference post.
+- `/post` as a reply - fallback: save the replied message as a reference post without media.
 - `/drafts` - list AI-generated HTML drafts.
 - `/send_draft latest` - send the newest draft from `storage/outbox`.
 
 Commands are fallback controls. The normal UI is the inline menu:
 
-- `1. Показать базу эмодзи` - recent premium/custom emoji plus short IDs.
-- `2. Добавить стиль / структуру` - the next message is saved as writing rules, format, tone, or CTA structure.
-- `3. Добавить пример поста` - the next message is saved as a reference post.
-- `4. Готовые посты и отправка` - outbox files and manual send button.
+- `Показать базу emoji` - recent premium/custom emoji plus short IDs.
+- `Сгенерировать пост на тему` - the next message is saved as a post-generation request for Codex / Claude.
+- `Готовые посты и отправка` - outbox files and manual send button.
 - `Что уже сохранено?` - storage counters.
 - `Как это работает?` - short workflow explanation.
 - `Очистить хранилище` - clears runtime storage after an inline confirmation, preserving the detected owner.
 - `AI: назвать emoji по ассетам` - save a prompt for Codex / Claude to label emoji by inspecting downloaded assets.
 - `Опц.: вручную назвать emoji` - optional human hint for a selected emoji, with arrow navigation.
+- `Доп.: добавить стиль / структуру` - optional writing rules, format, tone, or CTA structure.
 
 ## Normal Workflow
 
-1. Send the bot a batch of premium/custom emoji, or send an emoji pack link like `https://t.me/addemoji/MarinEmojis1_by_e4zybot`.
-2. Optional: label the useful ones if you want extra human meaning. Codex or Claude can also inspect downloaded assets directly.
-3. Forward example posts to the bot.
-4. Save recurring copy patterns with `/template`.
-5. Open this project in Codex or Claude and ask it to read `AI_BRIEF.md`.
+1. Send the bot a batch of premium/custom emoji, or send up to 5 emoji pack links in one message, each on a new line.
+2. Forward example posts to the bot. The bot saves text, entities, and raw JSON; media files are intentionally skipped.
+3. Optional: label the useful emoji if you want extra human meaning. Codex or Claude can also inspect downloaded assets directly.
+4. Press `Сгенерировать пост на тему` and send the post topic.
+5. Open this project in Codex or Claude and ask it to read the latest `storage/post-requests/*-post-generation-request.md`.
 6. The AI agent writes the final post as an HTML file in `storage/outbox`.
 7. The bot auto-pushes the new draft to the owner. You can also press `Отправить последний готовый пост`.
 
@@ -94,8 +95,9 @@ The owner chat is saved in `storage/bot-state.json`. Auto-push uses that chat.
 - `storage/emoji-assets/` - downloaded `.webp`, `.tgs`, or `.webm` emoji files. These files are what the AI agent should inspect when labels are missing.
 - `storage/emoji-previews/` - converted previews for quick inspection: `.tgs` -> `.svg` plus AI-friendly `.png` or `.webp`, `.webm` -> first-frame `.jpg`, `.webp` -> `.png`.
 - `storage/emoji-label-requests/` - prompts for Codex / Claude to label emoji by inspecting assets.
+- `storage/post-requests/` - prompts for Codex / Claude to generate posts from a topic plus saved context.
 - `storage/templates/` - reusable text templates.
-- `storage/posts/` - forwarded reference posts and media.
+- `storage/posts/` - forwarded reference posts: text, entities, and raw JSON only.
 - `storage/raw/` - raw Telegram message JSON for templates.
 - `storage/outbox/` - final HTML posts created by Codex, Claude, or another AI agent.
 

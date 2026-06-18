@@ -6,7 +6,6 @@ from aiogram.types import Message
 from premium_tg_posts.services.emoji_collector import collect_custom_emojis
 from premium_tg_posts.services.storage import LibraryStorage
 from premium_tg_posts.services.telegram_content import (
-    download_message_media,
     message_text_and_entities,
     message_title,
     raw_message,
@@ -20,14 +19,13 @@ async def save_reference_post(bot: Bot, library: LibraryStorage, message: Messag
     text, _ = message_text_and_entities(message)
     title = message_title(message, "post")
     post_dir = library.create_post_dir(title)
-    media_files = await download_message_media(bot, message, post_dir / "media", library.root)
 
     library.save_post(
         title=title,
         text=text,
         entities=serializable_entities(message),
         raw_message=raw_message(message),
-        media_files=media_files,
+        media_files=[],
         post_dir=post_dir,
     )
-    return post_dir.relative_to(library.root).as_posix(), len(media_files)
+    return post_dir.relative_to(library.root).as_posix(), 0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -112,7 +113,11 @@ def message_title(message: Message, fallback: str = "post") -> str:
 
 
 def raw_message(message: Message) -> dict[str, Any]:
-    return message.model_dump(mode="json", exclude_none=True)
+    try:
+        return message.model_dump(mode="json", exclude_none=True)
+    except Exception:  # noqa: BLE001 - aiogram may keep Default sentinels in forwarded payloads.
+        payload = message.model_dump(mode="python", exclude_none=True)
+        return json.loads(json.dumps(payload, ensure_ascii=False, default=str))
 
 
 async def download_message_media(bot: Bot, message: Message, media_dir: Path, storage_root: Path) -> list[dict[str, Any]]:

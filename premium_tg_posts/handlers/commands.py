@@ -28,11 +28,13 @@ HELP_TEXT = """<b>Сборщик материалов для Codex / Claude</b>
 Автор: @fiscaldev
 
 Рабочий порядок:
-1. Отправь premium emoji пачкой.
-2. Нажми <b>Добавить стиль / структуру</b> и отправь правила будущих постов.
-3. Нажми <b>Добавить пример поста</b> или перешли пример.
-4. Попроси Codex или Claude собрать пост.
-5. Когда AI-агент сохранит HTML в <code>storage/outbox</code>, бот отправит его сам.
+1. Отправь premium emoji пачкой или до 5 ссылок на emoji-pack, каждую с новой строки.
+2. Нафорварди примеры постов. Я сохраню текст, entities и raw JSON, без медиа.
+3. Подпиши emoji через AI или вручную, если хочешь помочь агенту с визуальным смыслом.
+4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему будущего поста.
+5. Когда Codex или Claude сохранит HTML в <code>storage/outbox</code>, бот отправит его сам.
+
+Стиль / структуру можно добавить отдельно кнопкой ниже, если нужны особые правила.
 
 Подписывать emoji не обязательно: ассеты уже скачиваются, AI-агент сможет их посмотреть."""
 
@@ -132,7 +134,10 @@ async def post_command(message: Message, bot: Bot, library: LibraryStorage) -> N
         await answer_html(message, "Ответь командой <code>/post</code> на сообщение, которое нужно сохранить как reference post.")
         return
     saved_path, media_count = await save_reference_post(bot, library, message.reply_to_message)
-    await message.answer(f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count}", reply_markup=main_menu())
+    await message.answer(
+        f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count} (медиа не сохраняю)",
+        reply_markup=main_menu(),
+    )
 
 
 @router.message(Command("drafts"))

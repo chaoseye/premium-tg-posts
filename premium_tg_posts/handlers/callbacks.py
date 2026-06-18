@@ -28,7 +28,7 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         await edit_or_answer(
             message,
             "Что делаем дальше?\n\n"
-            "Если эмодзи уже импортированы, добавь стиль/структуру и пару примеров. После этого Codex или Claude сможет собрать готовый Telegram HTML-пост.",
+            "Если emoji уже импортированы, нафорварди примеры постов. Потом можно подписать emoji и поставить Codex / Claude задачу на пост по теме.",
             reply_markup=main_menu(),
         )
         return
@@ -37,11 +37,12 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         await edit_or_answer(
             message,
             "<b>Как пользоваться</b>\n\n"
-            "1. Просто отправь premium emoji пачкой. Бот сохранит ID и скачает ассеты.\n"
-            "2. Нажми <b>Добавить стиль / структуру</b> и отправь правила: как писать, какие блоки, какой тон, какой CTA.\n"
-            "3. Нажми <b>Добавить пример поста</b> или просто перешли пост, который нравится.\n"
-            "4. Попроси Codex или Claude сделать пост. Когда AI-агент сохранит HTML в <code>storage/outbox</code>, бот отправит его тебе сам.\n\n"
-            "Названия emoji необязательны: AI-агент может смотреть скачанные ассеты.",
+            "1. Отправь premium emoji пачкой или до 5 ссылок на emoji-pack, каждую с новой строки.\n"
+            "2. Просто перешли посты-референсы. Я сохраню текст, entities и raw JSON, без медиа.\n"
+            "3. Подпиши emoji через AI или вручную, если хочешь помочь агенту с визуальным смыслом.\n"
+            "4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему.\n"
+            "5. Когда Codex или Claude сохранит HTML в <code>storage/outbox</code>, бот отправит его тебе сам.\n\n"
+            "Стиль / структуру можно добавить отдельной кнопкой ниже, если нужны особые правила.",
             reply_markup=main_menu(),
         )
         return
@@ -83,7 +84,7 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         await edit_or_answer(
             message,
             "<b>Очистить хранилище?</b>\n\n"
-            "Будут удалены emoji, ассеты, превью, AI-label requests, шаблоны, reference posts, raw-файлы и outbox drafts.\n"
+            "Будут удалены emoji, ассеты, превью, AI-label requests, post requests, шаблоны, reference posts, raw-файлы и outbox drafts.\n"
             "Owner сохранится, чтобы бот не потерял получателя.",
             reply_markup=clear_storage_confirm_menu(),
         )
@@ -154,14 +155,23 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         )
         return
 
-    if data == "mode:post":
+    if data == "mode:post_topic":
         if callback.from_user:
-            library.set_user_mode(callback.from_user.id, "post")
+            library.set_user_mode(callback.from_user.id, "post_topic")
         await edit_or_answer(
             message,
-            "<b>Следующее сообщение сохраню как пример поста.</b>\n\n"
-            "Можешь переслать готовый пост или отправить свой пример. Бот сохранит текст, форматирование, premium emoji entities и медиа.",
+            "<b>Следующее сообщение сохраню как тему для поста.</b>\n\n"
+            "Напиши обычным текстом, о чем нужен пост: что сделали, для кого, какой акцент, какой CTA. "
+            "Codex / Claude потом прочитает этот request вместе с emoji и референсами.",
             reply_markup=back_menu(),
+        )
+        return
+
+    if data == "mode:post":
+        await edit_or_answer(
+            message,
+            "Кнопка больше не нужна: просто перешли сюда пост-референс, и я сохраню его автоматически без медиа.",
+            reply_markup=main_menu(),
         )
         return
 

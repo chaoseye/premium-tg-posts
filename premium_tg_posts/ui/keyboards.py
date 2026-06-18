@@ -7,29 +7,29 @@ def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="1. Показать базу эмодзи", callback_data="menu:emojis"),
+                InlineKeyboardButton(text="Показать базу emoji", callback_data="menu:emojis"),
             ],
             [
-                InlineKeyboardButton(text="2. Добавить стиль / структуру", callback_data="mode:template"),
+                InlineKeyboardButton(text="Сгенерировать пост на тему", callback_data="mode:post_topic"),
             ],
             [
-                InlineKeyboardButton(text="3. Добавить пример поста", callback_data="mode:post"),
-            ],
-            [
-                InlineKeyboardButton(text="4. Готовые посты и отправка", callback_data="menu:drafts"),
+                InlineKeyboardButton(text="Готовые посты и отправка", callback_data="menu:drafts"),
             ],
             [
                 InlineKeyboardButton(text="Что уже сохранено?", callback_data="menu:stats"),
                 InlineKeyboardButton(text="Как это работает?", callback_data="menu:help"),
             ],
             [
-                InlineKeyboardButton(text="Очистить хранилище", callback_data="storage:clear_prompt"),
-            ],
-            [
                 InlineKeyboardButton(text="AI: назвать emoji по ассетам", callback_data="mode:emoji_label_prompt"),
             ],
             [
                 InlineKeyboardButton(text="Опц.: вручную назвать emoji", callback_data="mode:label_last"),
+            ],
+            [
+                InlineKeyboardButton(text="Доп.: добавить стиль / структуру", callback_data="mode:template"),
+            ],
+            [
+                InlineKeyboardButton(text="Очистить хранилище", callback_data="storage:clear_prompt"),
             ],
         ]
     )
@@ -55,19 +55,19 @@ def after_collect_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Дальше: добавить стиль / структуру", callback_data="mode:template"),
-            ],
-            [
-                InlineKeyboardButton(text="Дальше: добавить пример поста", callback_data="mode:post"),
-            ],
-            [
-                InlineKeyboardButton(text="Показать базу эмодзи", callback_data="menu:emojis"),
+                InlineKeyboardButton(text="Сгенерировать пост на тему", callback_data="mode:post_topic"),
             ],
             [
                 InlineKeyboardButton(text="AI: назвать emoji по ассетам", callback_data="mode:emoji_label_prompt"),
             ],
             [
                 InlineKeyboardButton(text="Опц.: вручную назвать emoji", callback_data="mode:label_last"),
+            ],
+            [
+                InlineKeyboardButton(text="Показать базу emoji", callback_data="menu:emojis"),
+            ],
+            [
+                InlineKeyboardButton(text="Доп.: добавить стиль / структуру", callback_data="mode:template"),
             ],
         ]
     )
