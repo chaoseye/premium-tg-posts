@@ -8,7 +8,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 
 from premium_tg_posts.handlers.replies import answer_html
-from premium_tg_posts.handlers.callbacks import render_drafts, render_emojis, render_owner
+from premium_tg_posts.handlers.callbacks import render_drafts, render_emojis, render_owner, render_profiles
 from premium_tg_posts.services.drafts import DraftSendError, send_html_draft
 from premium_tg_posts.services.post_collector import save_reference_post
 from premium_tg_posts.services.storage import LibraryStorage
@@ -20,7 +20,7 @@ from premium_tg_posts.services.telegram_content import (
     split_title_and_body,
 )
 from premium_tg_posts.utils.text import html_code, relative_to, short_id, tg_emoji_html
-from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, main_menu
+from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, main_menu, profiles_menu
 
 router = Router(name="commands")
 
@@ -32,7 +32,9 @@ HELP_TEXT = """<b>Сборщик материалов для Codex / Claude</b>
 2. Нафорварди примеры постов. Я сохраню текст, entities и raw JSON, без медиа.
 3. Подпиши emoji через AI или вручную, если хочешь помочь агенту с визуальным смыслом.
 4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему будущего поста.
-5. Когда Codex или Claude сохранит HTML в <code>storage/outbox</code>, бот отправит его сам.
+5. Когда Codex или Claude сохранит HTML в outbox активного профиля, бот отправит его сам.
+
+Если нужно разделять разные тематики, открой <b>Профили</b>, создай профиль с любым названием и загружай emoji/посты уже внутрь него.
 
 Стиль / структуру можно добавить отдельно кнопкой ниже, если нужны особые правила.
 
@@ -52,6 +54,7 @@ async def stats_command(message: Message, library: LibraryStorage) -> None:
         "\n".join(
             [
                 "<b>Storage</b>",
+                f"active profile: {html_code(library.active_profile_name())}",
                 f"premium emojis: {stats.emojis}",
                 f"templates: {stats.templates}",
                 f"reference posts: {stats.posts}",
@@ -61,6 +64,16 @@ async def stats_command(message: Message, library: LibraryStorage) -> None:
             ]
         ),
         reply_markup=back_menu(),
+        disable_web_page_preview=True,
+    )
+
+
+@router.message(Command("profiles"))
+async def profiles_command(message: Message, library: LibraryStorage) -> None:
+    profiles = library.list_profiles()
+    await message.answer(
+        render_profiles(library),
+        reply_markup=profiles_menu(profiles, library.active_profile_slug()),
         disable_web_page_preview=True,
     )
 
@@ -144,7 +157,8 @@ async def post_command(message: Message, bot: Bot, library: LibraryStorage) -> N
 async def drafts_command(message: Message, library: LibraryStorage) -> None:
     drafts = library.list_drafts()
     if not drafts:
-        await message.answer("В <code>storage/outbox</code> пока нет HTML-постов от Codex / Claude.", reply_markup=main_menu())
+        outbox = library.outbox_dir.relative_to(library.root).as_posix()
+        await message.answer(f"В <code>{escape(outbox)}</code> пока нет HTML-постов от Codex / Claude.", reply_markup=main_menu())
         return
     await message.answer(render_drafts(library), reply_markup=drafts_menu(True), disable_web_page_preview=True)
 

@@ -88,7 +88,8 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
     progress_reporter: EmojiDownloadProgress | None = None
     if emoji_entities or set_names:
         unique_count = len(dict.fromkeys(row["custom_emoji_id"] for row in emoji_entities))
-        intro = [f"Принял emoji pack: <code>{escape(name)}</code>" for name in set_names]
+        intro = [f"Профиль: <b>{escape(library.active_profile_name())}</b>"]
+        intro.extend(f"Принял emoji pack: <code>{escape(name)}</code>" for name in set_names)
         if skipped_set_count:
             intro.append(f"Беру первые {MAX_STICKER_SET_LINKS} ссылок, остальные {skipped_set_count} отправь следующим сообщением.")
         if unique_count:
@@ -130,6 +131,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
         await edit_or_answer_html(
             message,
             status_message,
+            f"Профиль: <b>{escape(library.active_profile_name())}</b>\n"
             f"Сохранил reference post: <code>{saved_path}</code>\nmedia files: {media_count} (медиа не сохраняю)\n\n"
             "Дальше можно подписать emoji или сразу поставить тему для генерации поста.",
             reply_markup=after_collect_menu(),
@@ -142,6 +144,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
             status_message,
             "\n".join(
                 [
+                    f"Профиль: <b>{escape(library.active_profile_name())}</b>",
                     f"Сохранил premium emoji: {len(emoji_rows)}",
                     *[
                         f"{tg_emoji_html(row['custom_emoji_id'], row.get('alt', '') or row.get('sticker_emoji', '') or '🎁')} <code>{short_id(row['custom_emoji_id'])}</code> - {escape(row.get('asset_type_label') or row.get('asset_type') or 'asset saved')}"
@@ -183,6 +186,23 @@ async def handle_user_mode(
     mode: str,
     mode_data: dict | None = None,
 ) -> bool:
+    if mode == "profile_create":
+        name, _ = message_text_and_entities(message)
+        name = name.strip()
+        if not name:
+            await message.answer("Не вижу название профиля. Нажми кнопку еще раз и отправь короткое название текстом.", reply_markup=main_menu())
+            return True
+        profile = library.create_profile(name, activate=True)
+        root = library.profile_root(profile["slug"]).relative_to(library.root).as_posix()
+        await message.answer(
+            f"Создал и включил профиль: <b>{escape(profile['name'])}</b>\n"
+            f"slug: <code>{escape(profile['slug'])}</code>\n"
+            f"root: <code>{escape(root)}</code>\n\n"
+            "Теперь все новые emoji, форварды, шаблоны, post requests и outbox будут сохраняться сюда.",
+            reply_markup=main_menu(),
+        )
+        return True
+
     if mode == "label_last":
         label, _ = message_text_and_entities(message)
         label = label.strip()
@@ -228,7 +248,7 @@ async def handle_user_mode(
             "Сохранил задачу на генерацию поста:\n"
             f"<code>{path.relative_to(library.root).as_posix()}</code>\n\n"
             "Теперь в Codex / Claude можно написать: «прочитай последний post-generation-request и собери Telegram HTML-пост». "
-            "Когда агент положит HTML в <code>storage/outbox</code>, бот отправит его сам.",
+            f"Когда агент положит HTML в <code>{escape(library.outbox_dir.relative_to(library.root).as_posix())}</code>, бот отправит его сам.",
             reply_markup=main_menu(),
         )
         return True

@@ -7,6 +7,9 @@ def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text="Профили", callback_data="profiles:menu"),
+            ],
+            [
                 InlineKeyboardButton(text="Показать базу emoji", callback_data="menu:emojis"),
             ],
             [
@@ -55,6 +58,9 @@ def after_collect_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text="Профили", callback_data="profiles:menu"),
+            ],
+            [
                 InlineKeyboardButton(text="Сгенерировать пост на тему", callback_data="mode:post_topic"),
             ],
             [
@@ -71,6 +77,18 @@ def after_collect_menu() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def profiles_menu(profiles: list[dict], active_slug: str) -> InlineKeyboardMarkup:
+    rows = []
+    for profile in profiles[:12]:
+        slug = str(profile.get("slug") or "")
+        name = str(profile.get("name") or slug or "profile")
+        prefix = "✓ " if slug == active_slug else ""
+        rows.append([InlineKeyboardButton(text=f"{prefix}{name[:40]}", callback_data=f"profile:switch:{slug}")])
+    rows.append([InlineKeyboardButton(text="Создать профиль", callback_data="profile:create")])
+    rows.append([InlineKeyboardButton(text="Вернуться к шагам", callback_data="menu:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def emoji_label_menu(index: int, total: int) -> InlineKeyboardMarkup:

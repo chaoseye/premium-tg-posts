@@ -9,7 +9,14 @@ from aiogram.types import CallbackQuery, Message
 from premium_tg_posts.handlers.replies import answer_html
 from premium_tg_posts.services.drafts import DraftSendError, send_html_draft
 from premium_tg_posts.services.storage import LibraryStorage
-from premium_tg_posts.ui.keyboards import back_menu, clear_storage_confirm_menu, drafts_menu, emoji_label_menu, main_menu
+from premium_tg_posts.ui.keyboards import (
+    back_menu,
+    clear_storage_confirm_menu,
+    drafts_menu,
+    emoji_label_menu,
+    main_menu,
+    profiles_menu,
+)
 from premium_tg_posts.utils.text import short_id, tg_emoji_html
 
 router = Router(name="callbacks")
@@ -41,7 +48,8 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
             "2. Просто перешли посты-референсы. Я сохраню текст, entities и raw JSON, без медиа.\n"
             "3. Подпиши emoji через AI или вручную, если хочешь помочь агенту с визуальным смыслом.\n"
             "4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему.\n"
-            "5. Когда Codex или Claude сохранит HTML в <code>storage/outbox</code>, бот отправит его тебе сам.\n\n"
+            "5. Когда Codex или Claude сохранит HTML в outbox активного профиля, бот отправит его тебе сам.\n\n"
+            "Если нужно разделять разные тематики, открой <b>Профили</b>, создай профиль с любым названием и загружай emoji/посты уже внутрь него.\n\n"
             "Стиль / структуру можно добавить отдельной кнопкой ниже, если нужны особые правила.",
             reply_markup=main_menu(),
         )
@@ -54,6 +62,7 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
             "\n".join(
                 [
                     "<b>Что уже сохранено</b>",
+                    f"профиль: <b>{escape(library.active_profile_name())}</b>",
                     f"premium emoji: {stats.emojis}",
                     f"шаблоны постов: {stats.templates}",
                     f"примеры постов: {stats.posts}",
@@ -77,14 +86,49 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         await edit_or_answer(message, render_owner(library), reply_markup=back_menu())
         return
 
+    if data == "profiles:menu":
+        profiles = library.list_profiles()
+        await edit_or_answer(
+            message,
+            render_profiles(library),
+            reply_markup=profiles_menu(profiles, library.active_profile_slug()),
+        )
+        return
+
+    if data == "profile:create":
+        if callback.from_user:
+            library.set_user_mode(callback.from_user.id, "profile_create")
+        await edit_or_answer(
+            message,
+            "<b>Создать профиль</b>\n\n"
+            "Отправь следующим сообщением название профиля. Например: <code>GiftStar</code>, <code>NFT drops</code>, <code>личный канал</code>.\n\n"
+            "После создания профиль сразу станет активным: все новые emoji, форварды, темы и outbox будут сохраняться внутри него.",
+            reply_markup=back_menu(),
+        )
+        return
+
+    if data.startswith("profile:switch:"):
+        slug = data.split(":", 2)[2]
+        profile = library.set_active_profile(slug)
+        if not profile:
+            await edit_or_answer(message, "Не нашел такой профиль. Открой список профилей еще раз.", reply_markup=back_menu())
+            return
+        profiles = library.list_profiles()
+        await edit_or_answer(
+            message,
+            f"<b>Активный профиль:</b> {escape(profile.get('name') or slug)}\n\n" + render_profiles(library),
+            reply_markup=profiles_menu(profiles, library.active_profile_slug()),
+        )
+        return
+
     if data == "storage:clear_prompt":
         if not is_owner_callback(callback, library):
             await edit_or_answer(message, "Очистка доступна только owner.", reply_markup=main_menu())
             return
         await edit_or_answer(
             message,
-            "<b>Очистить хранилище?</b>\n\n"
-            "Будут удалены emoji, ассеты, превью, AI-label requests, post requests, шаблоны, reference posts, raw-файлы и outbox drafts.\n"
+            f"<b>Очистить активный профиль «{escape(library.active_profile_name())}»?</b>\n\n"
+            "Будут удалены emoji, ассеты, превью, AI-label requests, post requests, шаблоны, reference posts, raw-файлы и outbox drafts только в активном профиле.\n"
             "Owner сохранится, чтобы бот не потерял получателя.",
             reply_markup=clear_storage_confirm_menu(),
         )
@@ -104,6 +148,7 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
             "\n".join(
                 [
                     "<b>Хранилище очищено</b>",
+                    f"профиль: <b>{escape(library.active_profile_name())}</b>",
                     f"premium emoji: {stats.emojis}",
                     f"шаблоны постов: {stats.templates}",
                     f"примеры постов: {stats.posts}",
@@ -183,7 +228,10 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
 async def send_latest_draft_from_button(bot: Bot, message: Message, library: LibraryStorage) -> None:
     draft = library.resolve_draft("latest")
     if not draft:
-        await answer_html(message, "Не нашел draft. Пусть Codex или Claude сохранит HTML-файл в <code>storage/outbox</code>.")
+        await answer_html(
+            message,
+            f"Не нашел draft. Пусть Codex или Claude сохранит HTML-файл в <code>{escape(library.outbox_dir.relative_to(library.root).as_posix())}</code>.",
+        )
         return
     try:
         sent = await send_html_draft(bot, message.chat.id, draft)
@@ -232,9 +280,17 @@ def render_emojis(library: LibraryStorage) -> str:
     data = library.load_emojis()
     rows = sorted(data.get("emojis", {}).values(), key=lambda item: item.get("last_seen_at", ""), reverse=True)
     if not rows:
-        return "База emoji пустая. Просто отправь premium emoji пачкой в этот чат, я сохраню ID и скачаю ассеты."
+        return (
+            f"База emoji в профиле <b>{escape(library.active_profile_name())}</b> пустая. "
+            "Просто отправь premium emoji пачкой в этот чат, я сохраню ID и скачаю ассеты."
+        )
 
-    lines = ["<b>База premium emoji</b>", "Показываю последние 15. Полный список лежит в <code>storage/premium-emojis.md</code>.", ""]
+    lines = [
+        "<b>База premium emoji</b>",
+        f"Профиль: <b>{escape(library.active_profile_name())}</b>",
+        f"Показываю последние 15. Полный список лежит в <code>{escape(library.premium_emojis_md.relative_to(library.root).as_posix())}</code>.",
+        "",
+    ]
     for item in rows[:15]:
         emoji_id = item.get("custom_emoji_id", "")
         alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
@@ -247,11 +303,43 @@ def render_emojis(library: LibraryStorage) -> str:
 def render_drafts(library: LibraryStorage) -> str:
     drafts = library.list_drafts()
     if not drafts:
-        return "Готовых постов пока нет. Когда Codex или Claude сохранит HTML-файл в <code>storage/outbox</code>, бот отправит его owner'у сам."
-    lines = ["<b>Готовые HTML-посты</b>", "Файлы из <code>storage/outbox</code>:", ""]
+        return (
+            f"Готовых постов в профиле <b>{escape(library.active_profile_name())}</b> пока нет. "
+            f"Когда Codex или Claude сохранит HTML-файл в <code>{escape(library.outbox_dir.relative_to(library.root).as_posix())}</code>, "
+            "бот отправит его owner'у сам."
+        )
+    lines = [
+        "<b>Готовые HTML-посты</b>",
+        f"Профиль: <b>{escape(library.active_profile_name())}</b>",
+        f"Папка: <code>{escape(library.outbox_dir.relative_to(library.root).as_posix())}</code>",
+        "",
+    ]
     for draft in drafts[:15]:
         marker = "отправлен" if library.is_draft_sent(draft) else "ошибка" if library.is_draft_failed(draft) else "новый"
         lines.append(f"- <code>{escape(draft.name)}</code> ({marker})")
+    return "\n".join(lines)
+
+
+def render_profiles(library: LibraryStorage) -> str:
+    rows = library.list_profiles()
+    active = library.active_profile_slug()
+    lines = [
+        "<b>Профили</b>",
+        "Профиль разделяет emoji, reference posts, стиль, post requests и outbox для разных тематик.",
+        "",
+    ]
+    for profile in rows:
+        stats = profile["stats"]
+        marker = "✓ " if profile["slug"] == active else ""
+        lines.extend(
+            [
+                f"{marker}<b>{escape(profile.get('name') or profile['slug'])}</b> <code>{escape(profile['slug'])}</code>",
+                f"root: <code>{escape(profile['root'])}</code>",
+                f"emoji: {stats.emojis} · posts: {stats.posts} · templates: {stats.templates} · drafts: {stats.drafts}",
+                "",
+            ]
+        )
+    lines.append("Нажми профиль ниже, чтобы переключиться. Новые материалы будут сохраняться в активный профиль.")
     return "\n".join(lines)
 
 

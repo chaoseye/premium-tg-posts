@@ -97,8 +97,31 @@ class StorageTests(unittest.TestCase):
             text = request_path.read_text(encoding="utf-8")
 
             self.assertIn("Пост про новый flow", text)
-            self.assertIn("storage/outbox", text)
+            self.assertIn(f"{storage.root.name}/outbox", text)
             self.assertIn("posts/", text)
+
+    def test_profiles_scope_materials_and_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = LibraryStorage(Path(tmp))
+            storage.ensure()
+
+            profile = storage.create_profile("GiftStar")
+            storage.upsert_emoji("5368324170671202286", {"alt": "🎁"})
+
+            self.assertEqual(profile["slug"], "giftstar")
+            self.assertEqual(storage.active_profile_slug(), "giftstar")
+            self.assertEqual(storage.stats().emojis, 1)
+
+            storage.set_active_profile("default")
+            self.assertEqual(storage.stats().emojis, 0)
+
+            storage.set_active_profile("giftstar")
+            request_path = storage.create_post_generation_request("Пост под GiftStar")
+            text = request_path.read_text(encoding="utf-8")
+
+            self.assertIn("active profile: GiftStar (`giftstar`)", text)
+            self.assertIn(f"{storage.root.name}/profiles/giftstar/premium-emojis.md", text)
+            self.assertIn(f"{storage.root.name}/profiles/giftstar/outbox", text)
 
     def test_clear_runtime_preserves_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

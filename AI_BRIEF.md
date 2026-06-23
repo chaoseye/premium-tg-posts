@@ -4,21 +4,28 @@ You are helping create Telegram posts from locally collected materials. This pro
 
 ## Read First
 
-1. `storage/premium-emojis.md`
-2. `storage/templates/`
-3. `storage/posts/`
-4. `storage/emoji-label-requests/` if the user asked to label emoji automatically
-5. Any specific user instructions in the current agent chat
+1. The newest `*-post-generation-request.md` or `*-emoji-label-request.md` if the bot created one.
+2. The profile paths named in that request.
+3. If there is no request, use the default profile paths: `storage/premium-emojis.md`, `storage/templates/`, and `storage/posts/`.
+4. Any specific user instructions in the current agent chat.
+
+## Profiles
+
+The bot supports named profiles for different themes/projects.
+
+- The default profile uses legacy paths such as `storage/premium-emojis.md`, `storage/posts/`, and `storage/outbox/`.
+- Named profiles use `storage/profiles/<slug>/...`, for example `storage/profiles/giftstar/premium-emojis.md` and `storage/profiles/giftstar/outbox/`.
+- When a post-generation request names a profile and an outbox path, follow those paths exactly.
 
 ## How To Use The Emoji Library
 
-Use saved premium/custom emoji through Telegram HTML tags from `storage/premium-emojis.md`:
+Use saved premium/custom emoji through Telegram HTML tags from the active profile's `premium-emojis.md`:
 
 ```html
 <tg-emoji emoji-id="CUSTOM_EMOJI_ID">🔥</tg-emoji>
 ```
 
-Labels are optional human hints, not required metadata. If a label is missing or unclear, inspect the downloaded asset in `storage/emoji-assets` and choose based on the visual.
+Labels are optional human hints, not required metadata. If a label is missing or unclear, inspect the downloaded asset in the same profile's `emoji-assets` directory and choose based on the visual.
 
 Asset type notes:
 
@@ -28,15 +35,15 @@ Asset type notes:
 
 ## Emoji Label Requests
 
-If the bot saved a request in `storage/emoji-label-requests/`, read the newest request first. It contains the user's prompt plus a table of emoji IDs and asset paths.
+If the bot saved a request in `storage/emoji-label-requests/` or `storage/profiles/<slug>/emoji-label-requests/`, read the newest request first. It contains the user's prompt plus a table of emoji IDs and asset paths.
 
 When labeling emoji:
 
-- Inspect the downloaded assets in `storage/emoji-assets`.
-- Prefer previews in `storage/emoji-previews` for quick visual identification, then check the original asset if needed.
-- Add concise labels to the matching records in `storage/emojis.json`.
+- Inspect the downloaded assets in the request's profile `emoji-assets` directory.
+- Prefer previews in the request's profile `emoji-previews` directory for quick visual identification, then check the original asset if needed.
+- Add concise labels to the matching records in the profile `emojis.json`.
 - Keep `custom_emoji_id` values unchanged.
-- Re-render `storage/premium-emojis.md` after editing:
+- Re-render the profile `premium-emojis.md` after editing:
 
 ```powershell
 python -B -c "from pathlib import Path; from premium_tg_posts.services.storage import LibraryStorage; LibraryStorage(Path('storage')).render_emojis_markdown()"
@@ -51,7 +58,9 @@ python -B -c "from pathlib import Path; from premium_tg_posts.services.storage i
 
 ## Output Contract
 
-Save the final post as an `.html` file in `storage/outbox`, for example:
+Save the final post as an `.html` file in the outbox path named by the latest post-generation request.
+
+If there is no request, use the default profile outbox, for example:
 
 ```text
 storage/outbox/2026-06-18-launch-post.html

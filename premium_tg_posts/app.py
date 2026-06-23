@@ -40,6 +40,7 @@ async def main_async() -> None:
         [
             BotCommand(command="help", description="commands and workflow"),
             BotCommand(command="stats", description="storage counters"),
+            BotCommand(command="profiles", description="switch material profiles"),
             BotCommand(command="emojis", description="recent premium emoji"),
             BotCommand(command="label", description="label an emoji"),
             BotCommand(command="template", description="save a template"),

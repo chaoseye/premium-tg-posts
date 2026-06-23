@@ -19,4 +19,5 @@ storage/posts/*
 storage/templates/*
 storage/raw/*
 storage/outbox/*.html
+storage/profiles/**
 !storage/**/.gitkeep
