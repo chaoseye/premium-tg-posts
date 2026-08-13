@@ -10,6 +10,7 @@ from premium_tg_posts.services.emoji_search import (
     search_emojis,
     suggest_for_topic,
     token_similarity,
+    tokenize,
 )
 from premium_tg_posts.services.storage import LibraryStorage
 
@@ -183,6 +184,73 @@ class TagExpansionTests(unittest.TestCase):
         matches = search_emojis([precise, noisy], "скидка")
 
         self.assertEqual(matches[0].custom_emoji_id, precise["custom_emoji_id"])
+
+
+class StopWordTests(unittest.TestCase):
+    def test_function_words_are_dropped(self) -> None:
+        self.assertEqual(tokenize("звёзды в глазах"), ["звёзды", "глазах"])
+        self.assertEqual(tokenize("смешно до смерти"), ["смешно", "смерти"])
+
+    def test_meaningful_short_words_survive(self) -> None:
+        self.assertIn("ок", tokenize("ок"))
+        self.assertIn("нло", tokenize("нло"))
+
+    def test_preposition_in_a_label_cannot_match_a_sentence(self) -> None:
+        # Regression: "звёзды в глазах" scored its "в" against any sentence
+        # containing "в", outranking emoji the sentence actually names.
+        starry = {
+            "custom_emoji_id": "5000000000000000001",
+            "alt": "🤩",
+            "labels": ["звёзды в глазах"],
+            "tags": ["восторг", "вау"],
+            "last_seen_at": "2026-08-13T10:00:00+00:00",
+        }
+        question = {
+            "custom_emoji_id": "5000000000000000002",
+            "alt": "❓",
+            "labels": ["вопрос"],
+            "tags": ["вопрос", "непонятно"],
+            "last_seen_at": "2026-08-13T11:00:00+00:00",
+        }
+
+        matches = search_emojis([starry, question], "Пишите вопросы в комментарии")
+
+        self.assertTrue(matches)
+        self.assertEqual(matches[0].custom_emoji_id, question["custom_emoji_id"])
+        self.assertNotIn(starry["custom_emoji_id"], [m.custom_emoji_id for m in matches])
+
+
+class DirectVersusRelatedTests(unittest.TestCase):
+    def test_direct_hit_outranks_a_higher_scoring_related_one(self) -> None:
+        # Regression: weighting alone let an emoji sharing several generic tags
+        # accumulate more than one the query names outright.
+        named = {
+            "custom_emoji_id": "6000000000000000001",
+            "alt": "😂",
+            "labels": ["смех"],
+            "tags": ["смех"],
+            "last_seen_at": "2026-08-13T10:00:00+00:00",
+        }
+        seed = {
+            "custom_emoji_id": "6000000000000000002",
+            "alt": "🤣",
+            "labels": ["хохот"],
+            "tags": ["смех", "весело", "угар", "прикол", "радость"],
+            "last_seen_at": "2026-08-13T11:00:00+00:00",
+        }
+        bystander = {
+            "custom_emoji_id": "6000000000000000003",
+            "alt": "🫢",
+            "labels": ["рука у рта"],
+            "tags": ["весело", "угар", "прикол", "радость"],
+            "last_seen_at": "2026-08-13T12:00:00+00:00",
+        }
+
+        matches = search_emojis([named, seed, bystander], "смех")
+        ids = [m.custom_emoji_id for m in matches]
+
+        direct = {named["custom_emoji_id"], seed["custom_emoji_id"]}
+        self.assertTrue(set(ids[:2]) <= direct, f"related hit ranked into the top: {ids}")
 
 
 class CandidateFilterTests(unittest.TestCase):

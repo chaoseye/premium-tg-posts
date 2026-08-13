@@ -6,6 +6,20 @@ from typing import Any, Iterable
 
 TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
+# Function words carry no meaning but match exactly and outweigh real hits: a
+# label like "звёзды в глазах" would score its "в" against the "в" in any
+# sentence. Reactions that happen to be short ("ок", "да", "нет") stay in.
+STOP_WORDS = frozenset(
+    """
+    а бы в во вот все всё где да для до же за и из или к как ко когда ли меня мне мы на
+    над не нет ни но о об от по под при про с со та так там те то тут ты у уже чем что
+    чтобы эта эти это этот я он она оно они вы его её ее их наш ваш мой твой был была
+    было были быть есть очень еще ещё только если тоже там сюда туда
+    a an and as at be but by for from has have if in into is it its of on or that the
+    their then there these this to too was were will with you your
+    """.split()
+)
+
 # Variation selectors and ZWJ carry no meaning on their own. Without dropping
 # them, a query like "⚡️" would match every emoji containing U+FE0F.
 IGNORED_SYMBOLS = frozenset({"\ufe0f", "\ufe0e", "\u200d"})
@@ -52,7 +66,11 @@ class EmojiMatch:
 
 
 def tokenize(value: str | None) -> list[str]:
-    return [token.lower() for token in TOKEN_RE.findall(value or "")]
+    return [
+        token
+        for token in (raw.lower() for raw in TOKEN_RE.findall(value or ""))
+        if token not in STOP_WORDS
+    ]
 
 
 def query_symbols(value: str | None) -> set[str]:
@@ -248,7 +266,6 @@ def search_emojis(
         return []
 
     index = build_index(records)
-    expanded = expand_tokens(index, tokens) if expand else []
 
     scored: dict[int, tuple[float, set[str]]] = {}
     for position in index.candidates(tokens, symbols):
@@ -256,11 +273,12 @@ def search_emojis(
         if score > 0:
             scored[position] = (score, matched_on)
 
-    # Only reach for related concepts where the query itself missed. Scoring a
+    # Reach for related concepts only where the query itself missed. Scoring a
     # direct hit against expansion terms would feed it its own sibling tags back,
     # inflating whichever emoji happens to carry the most tags.
-    if expanded:
-        for position in index.candidates(expanded, set()):
+    if expand:
+        expanded = expand_tokens(index, tokens)
+        for position in index.candidates(expanded, set()) if expanded else []:
             if position in scored:
                 continue
             related_score, related_fields = _score_tokens(
@@ -274,8 +292,18 @@ def search_emojis(
         for position, (score, matched_on) in scored.items()
     ]
 
-    # Newest first among equal scores, so repeated searches stay stable.
-    matches.sort(key=lambda match: (match.score, str(match.record.get("last_seen_at", ""))), reverse=True)
+    # Direct hits always outrank related ones, whatever the numbers say. A weight
+    # alone is not enough: an emoji sharing several generic tags accumulates more
+    # than one naming the query outright. Newest first among equals, so repeated
+    # searches stay stable.
+    matches.sort(
+        key=lambda match: (
+            "related" not in match.matched_on,
+            match.score,
+            str(match.record.get("last_seen_at", "")),
+        ),
+        reverse=True,
+    )
     return matches[:limit]
 
 
