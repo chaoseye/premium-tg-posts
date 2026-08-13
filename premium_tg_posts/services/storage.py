@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from premium_tg_posts.services.emoji_search import EmojiMatch, search_emojis, suggest_for_topic
 from premium_tg_posts.utils.text import (
     fenced_json,
     local_stamp,
@@ -463,6 +464,7 @@ class LibraryStorage:
             f"- reference posts: {len(posts)}",
             f"- style/templates: {len(templates)}",
             "",
+            *self._candidate_emoji_lines(topic),
             "## Latest Reference Posts",
             "",
             markdown_list(f"`{self._display_path(path / 'index.md')}`" for path in posts[:10]),
@@ -474,6 +476,58 @@ class LibraryStorage:
         ]
         request_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return request_path
+
+    def find_emojis(self, query: str, limit: int = 15) -> list[EmojiMatch]:
+        return search_emojis(self.emoji_records(sort_by="last_seen_at", reverse=True), query, limit=limit)
+
+    def _candidate_emoji_lines(self, topic: str) -> list[str]:
+        records = self.emoji_records(sort_by="last_seen_at", reverse=True)
+        header = ["## Candidate Emoji For This Topic", ""]
+        if not records:
+            return [*header, "_No emoji saved in this profile yet._", ""]
+
+        matches, is_fallback = suggest_for_topic(records, topic)
+        if is_fallback:
+            header.append(
+                "No label, tag, or pack title matched this topic, so these are simply the most "
+                "recently added emoji and **not** topic matches. Inspect the previews before "
+                "choosing, or label the library first."
+            )
+        else:
+            header.append(
+                f"Ranked by match against the topic. {len(matches)} of {len(records)} emoji shown; "
+                f"the full catalog stays at `{self._display_path(self.premium_emojis_md)}`."
+            )
+        header.extend(
+            [
+                "Paste the HTML tag as-is. If a label is unclear, open the preview image.",
+                "",
+                "| Score | Label | Alt | Short ID | HTML tag | Preview |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+
+        for match in matches:
+            item = match.record
+            emoji_id = str(item.get("custom_emoji_id", ""))
+            alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+            labels = ", ".join(item.get("labels", [])) or "unlabeled"
+            header.append(
+                "| "
+                + " | ".join(
+                    [
+                        f"{match.score:.1f}" if match.score else "-",
+                        _md_cell(labels),
+                        _md_cell(alt),
+                        f"`{short_id(emoji_id)}`",
+                        f'`<tg-emoji emoji-id="{emoji_id}">{alt}</tg-emoji>`',
+                        _md_cell(str(item.get("preview_path", ""))),
+                    ]
+                )
+                + " |"
+            )
+        header.append("")
+        return header
 
     def resolve_emoji_id(self, selector: str, data: dict[str, Any] | None = None) -> str | None:
         data = data or self.load_emojis()

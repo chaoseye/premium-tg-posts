@@ -50,6 +50,7 @@ python run_bot.py
 - `/stats` - show storage counters.
 - `/profiles` - show and switch material profiles.
 - `/emojis` - list recent saved premium/custom emoji.
+- `/find запрос` - find emoji by label, tag, pack title, or the emoji symbol itself; returns ready `<tg-emoji>` tags.
 - `/label short_id описание` - optionally add a human hint to an emoji.
 - `/label last описание` - optionally label the most recently seen emoji.
 - `/template Название\nтекст шаблона` - save a text template.
@@ -62,6 +63,7 @@ Commands are fallback controls. The normal UI is the inline menu:
 
 - `Профили` - create or switch named workspaces for different themes/projects.
 - `Показать базу emoji` - recent premium/custom emoji plus short IDs.
+- `Найти emoji по смыслу` - search the library by meaning and get ready-to-paste `<tg-emoji>` tags.
 - `Сгенерировать пост на тему` - the next message is saved as a post-generation request for Codex / Claude.
 - `Готовые посты и отправка` - outbox files and manual send button.
 - `Что уже сохранено?` - storage counters.
@@ -81,6 +83,24 @@ Commands are fallback controls. The normal UI is the inline menu:
 6. Open this project in Codex or Claude and ask it to read the latest post-generation request for the active profile.
 7. The AI agent writes the final post as an HTML file into the outbox path named in that request.
 8. The bot auto-pushes the new draft to the owner. You can also press `Отправить последний готовый пост`.
+
+## Finding Emoji
+
+Large libraries are hard to use by eye, so the bot can search them.
+
+- `Найти emoji по смыслу` in the inline menu, or `/find запрос`.
+- Search covers labels, tags, and the pack title, and also accepts the emoji symbol itself (`/find 🔥`).
+- Matching tolerates inflection, so `подарков` finds an emoji labeled `подарок`.
+- Results come back with a ready-to-paste `<tg-emoji>` tag per hit.
+
+The same ranking feeds post generation: every post-generation request embeds a
+`Candidate Emoji For This Topic` table with the best matches for that topic, so the
+agent gets a short shortlist instead of only a link to the whole catalog.
+
+Search reads labels, so an unlabeled library returns nothing. Label first via
+`AI: назвать emoji по ассетам` or `Опц.: вручную назвать emoji`. When no label matches a
+topic, the request falls back to the most recently added emoji and says explicitly that
+those are not topic matches.
 
 ## Owner Detection
 

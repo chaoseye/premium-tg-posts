@@ -27,6 +27,12 @@ Use saved premium/custom emoji through Telegram HTML tags from the active profil
 
 Labels are optional human hints, not required metadata. If a label is missing or unclear, inspect the downloaded asset in the same profile's `emoji-assets` directory and choose based on the visual.
 
+### Candidate Emoji In Post Requests
+
+A post-generation request contains a `Candidate Emoji For This Topic` table: the emoji whose labels, tags, or pack title best match the topic, each with a ready `<tg-emoji>` tag and a preview path. Prefer these candidates, but they are a shortlist and not a restriction — the full catalog stays available at the `emoji catalog` path named in the same request.
+
+Read the note above that table. When nothing matched the topic, it says the rows are the most recently added emoji and **not** topic matches; in that case ignore the ordering and pick by inspecting the previews.
+
 Asset type notes:
 
 - `animated TGS/Lottie -> SVG -> PNG` or `animated TGS/Lottie -> SVG -> WEBP` means the original Telegram animation is saved as `.tgs`; the bot renders frame 3 through the SVG renderer, keeps the intermediate `.svg`, and saves an AI-friendly raster preview in `storage/emoji-previews`.

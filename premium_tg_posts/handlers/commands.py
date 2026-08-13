@@ -8,7 +8,13 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 
 from premium_tg_posts.handlers.replies import answer_html
-from premium_tg_posts.handlers.callbacks import render_drafts, render_emojis, render_owner, render_profiles
+from premium_tg_posts.handlers.callbacks import (
+    render_drafts,
+    render_emoji_search,
+    render_emojis,
+    render_owner,
+    render_profiles,
+)
 from premium_tg_posts.services.drafts import DraftSendError, send_html_draft
 from premium_tg_posts.services.post_collector import save_reference_post
 from premium_tg_posts.services.storage import LibraryStorage
@@ -38,7 +44,7 @@ HELP_TEXT = """<b>Сборщик материалов для Codex / Claude</b>
 
 Стиль / структуру можно добавить отдельно кнопкой ниже, если нужны особые правила.
 
-Подписывать emoji не обязательно: ассеты уже скачиваются, AI-агент сможет их посмотреть."""
+Подписывать emoji не обязательно: ассеты уже скачиваются, AI-агент сможет их посмотреть. Но подписанные emoji находятся кнопкой <b>Найти emoji по смыслу</b> и попадают в задание на пост как готовые кандидаты."""
 
 
 @router.message(CommandStart())
@@ -87,6 +93,20 @@ async def emojis_command(message: Message, library: LibraryStorage) -> None:
         return
 
     await message.answer(render_emojis(library), reply_markup=back_menu(), disable_web_page_preview=True)
+
+
+@router.message(Command("find"))
+async def find_command(message: Message, command: CommandObject, library: LibraryStorage) -> None:
+    query = (command.args or "").strip()
+    if not query:
+        await answer_html(
+            message,
+            "Формат: <code>/find запрос</code>\n\n"
+            "Например: <code>/find подарок</code>, <code>/find огонь скидка</code>.\n"
+            "Можно искать и самим символом: <code>/find 🔥</code>.",
+        )
+        return
+    await message.answer(render_emoji_search(library, query), reply_markup=back_menu(), disable_web_page_preview=True)
 
 
 @router.message(Command("label"))

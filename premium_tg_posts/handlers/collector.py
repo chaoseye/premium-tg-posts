@@ -7,6 +7,7 @@ from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import Message
 
+from premium_tg_posts.handlers.callbacks import render_emoji_search
 from premium_tg_posts.handlers.replies import answer_html, edit_or_answer_html
 from premium_tg_posts.services.emoji_collector import collect_custom_emoji_set, collect_custom_emojis
 from premium_tg_posts.services.post_collector import save_reference_post
@@ -220,6 +221,18 @@ async def handle_user_mode(
             f"Добавил название: {tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(label)}",
             reply_markup=main_menu(),
         )
+        return True
+
+    if mode == "emoji_find":
+        query, _ = message_text_and_entities(message)
+        query = query.strip()
+        if not query:
+            await message.answer(
+                "Не вижу текста запроса. Нажми кнопку еще раз и отправь слово для поиска.",
+                reply_markup=main_menu(),
+            )
+            return True
+        await answer_html(message, render_emoji_search(library, query), reply_markup=after_collect_menu())
         return True
 
     if mode == "emoji_label_prompt":

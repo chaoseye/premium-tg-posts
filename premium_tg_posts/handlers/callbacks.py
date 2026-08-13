@@ -21,6 +21,10 @@ from premium_tg_posts.utils.text import short_id, tg_emoji_html
 
 router = Router(name="callbacks")
 
+# Each result costs two lines plus a ready-to-paste tag; keep the message well
+# under Telegram's 4096-character limit.
+SEARCH_RESULT_LIMIT = 10
+
 
 @router.callback_query()
 async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibraryStorage) -> None:
@@ -50,6 +54,9 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
             "4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему.\n"
             "5. Когда Codex или Claude сохранит HTML в outbox активного профиля, бот отправит его тебе сам.\n\n"
             "Если нужно разделять разные тематики, открой <b>Профили</b>, создай профиль с любым названием и загружай emoji/посты уже внутрь него.\n\n"
+            "Кнопка <b>Найти emoji по смыслу</b> ищет по подписям и тегам и выдает готовые "
+            "<code>&lt;tg-emoji&gt;</code> теги. Подходящие emoji попадают и в задание на пост, "
+            "чтобы агент не выбирал вслепую.\n\n"
             "Стиль / структуру можно добавить отдельной кнопкой ниже, если нужны особые правила.",
             reply_markup=main_menu(),
         )
@@ -188,6 +195,28 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         )
         return
 
+    if data == "mode:emoji_find":
+        if not library.latest_emoji():
+            await edit_or_answer(
+                message,
+                "База emoji пустая, искать пока не в чем. Сначала отправь premium emoji пачкой.",
+                reply_markup=back_menu(),
+            )
+            return
+        if callback.from_user:
+            library.set_user_mode(callback.from_user.id, "emoji_find")
+        await edit_or_answer(
+            message,
+            "<b>Поиск emoji по смыслу</b>\n\n"
+            "Отправь следующим сообщением слово или несколько слов — найду подходящие emoji "
+            "и дам готовые теги для вставки в пост.\n\n"
+            "Например: <code>подарок</code>, <code>огонь скидка</code>. "
+            "Можно искать и самим символом: <code>🔥</code>.\n\n"
+            "Поиск идет по подписям, тегам и названию пака.",
+            reply_markup=back_menu(),
+        )
+        return
+
     if data == "mode:template":
         if callback.from_user:
             library.set_user_mode(callback.from_user.id, "template")
@@ -297,6 +326,48 @@ def render_emojis(library: LibraryStorage) -> str:
         labels = ", ".join(item.get("labels", [])) or "unlabeled"
         asset_type = item.get("asset_type_label", "") or item.get("asset_type", "asset")
         lines.append(f"{tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(asset_type)} - {escape(labels)}")
+    return "\n".join(lines)
+
+
+def render_emoji_search(library: LibraryStorage, query: str) -> str:
+    matches = library.find_emojis(query, limit=200)
+    if not matches:
+        records = library.emoji_records()
+        if not records:
+            return (
+                f"База emoji в профиле <b>{escape(library.active_profile_name())}</b> пустая. "
+                "Сначала отправь premium emoji пачкой или ссылку на emoji pack."
+            )
+        unlabeled = sum(1 for item in records if not item.get("labels"))
+        return "\n".join(
+            [
+                f"По запросу «{escape(query)}» ничего не нашел.",
+                "",
+                f"В профиле emoji: {len(records)}, из них без подписей: {unlabeled}.",
+                "Поиск идет по подписям, тегам и названию пака. "
+                "Если emoji не подписаны, искать пока не по чему.",
+                "",
+                "Нажми <b>AI: назвать emoji по ассетам</b> — агент подпишет их по картинкам, "
+                "и поиск заработает.",
+            ]
+        )
+
+    shown = matches[:SEARCH_RESULT_LIMIT]
+    lines = [
+        f"<b>Поиск emoji: «{escape(query)}»</b>",
+        f"Профиль: <b>{escape(library.active_profile_name())}</b>",
+        f"Совпадений: {len(matches)}" + (f", показываю {len(shown)}" if len(matches) > len(shown) else ""),
+        "",
+    ]
+    for match in shown:
+        item = match.record
+        emoji_id = str(item.get("custom_emoji_id", ""))
+        alt = item.get("alt", "") or item.get("sticker_emoji", "") or "🎁"
+        labels = ", ".join(item.get("labels", [])) or "без названия"
+        lines.append(f"{tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(labels)}")
+        lines.append(f"<code>{escape(tg_emoji_html(emoji_id, alt))}</code>")
+        lines.append("")
+    lines.append("Скопируй готовый тег в пост или попроси агента взять эти emoji.")
     return "\n".join(lines)
 
 
