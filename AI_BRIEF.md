@@ -48,6 +48,7 @@ When labeling emoji:
 - Inspect the downloaded assets in the request's profile `emoji-assets` directory.
 - Prefer previews in the request's profile `emoji-previews` directory for quick visual identification, then check the original asset if needed.
 - Add concise labels to the matching records in the profile `emojis.json`.
+- Fill `tags` as well, not only `labels`. The bot matches post text against these words, so write the vocabulary a post would use to mean the emoji: synonyms, what it stands for, situations it appears in, and pronounced tone. 5-12 single words per emoji, in the language the posts are written in. A rocket is not only `ракета`; it is also `запуск`, `старт`, `релиз`, `анонс`.
 - Keep `custom_emoji_id` values unchanged.
 - Re-render the profile `premium-emojis.md` after editing:
 

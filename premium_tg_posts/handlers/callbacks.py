@@ -48,11 +48,13 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
         await edit_or_answer(
             message,
             "<b>Как пользоваться</b>\n\n"
-            "1. Отправь premium emoji пачкой или до 5 ссылок на emoji-pack, каждую с новой строки.\n"
-            "2. Просто перешли посты-референсы. Я сохраню текст, entities и raw JSON, без медиа.\n"
-            "3. Подпиши emoji через AI или вручную, если хочешь помочь агенту с визуальным смыслом.\n"
-            "4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему.\n"
-            "5. Когда Codex или Claude сохранит HTML в outbox активного профиля, бот отправит его тебе сам.\n\n"
+            "Если пост уже написан:\n"
+            "1. Отправь premium emoji пачкой или до 5 ссылок на emoji-pack.\n"
+            "2. Нажми <b>AI: назвать emoji по ассетам</b> — агент проставит подписи и смысловые теги.\n"
+            "3. Нажми <b>Добавить emoji в мой пост</b> и пришли свой текст. Верну с emoji, форматирование сохранится.\n\n"
+            "Если пост нужен с нуля:\n"
+            "4. Перешли посты-референсы — сохраню текст, entities и raw JSON, без медиа.\n"
+            "5. Нажми <b>Сгенерировать пост на тему</b>. Когда агент сохранит HTML в outbox, бот отправит его сам.\n\n"
             "Если нужно разделять разные тематики, открой <b>Профили</b>, создай профиль с любым названием и загружай emoji/посты уже внутрь него.\n\n"
             "Кнопка <b>Найти emoji по смыслу</b> ищет по подписям и тегам и выдает готовые "
             "<code>&lt;tg-emoji&gt;</code> теги. Подходящие emoji попадают и в задание на пост, "
@@ -191,6 +193,28 @@ async def handle_callback(callback: CallbackQuery, bot: Bot, library: LibrarySto
             "<b>AI-подпись emoji по ассетам</b>\n\n"
             "Следующим сообщением отправь промпт для Codex / Claude: как назвать emoji, на каком языке, насколько коротко, какие теги нужны.\n\n"
             "Пример: <code>Назови все emoji коротко по-русски: 2-4 слова, по визуалу, без воды. Для одинаковых подарков различай цвет/эффект.</code>",
+            reply_markup=back_menu(),
+        )
+        return
+
+    if data == "mode:decorate_post":
+        if not library.latest_emoji():
+            await edit_or_answer(
+                message,
+                "База emoji пустая, расставлять нечего. Сначала отправь premium emoji пачкой "
+                "или ссылку на emoji pack.",
+                reply_markup=back_menu(),
+            )
+            return
+        if callback.from_user:
+            library.set_user_mode(callback.from_user.id, "decorate_post")
+        await edit_or_answer(
+            message,
+            "<b>Добавить emoji в готовый пост</b>\n\n"
+            "Отправь следующим сообщением свой пост целиком, как есть. "
+            "Я подберу emoji под смысл каждой строки, вставлю их и пришлю готовый текст.\n\n"
+            "Жирный шрифт, ссылки и остальное форматирование сохранятся. "
+            "Строки, где ты уже поставил emoji, не трону.",
             reply_markup=back_menu(),
         )
         return
@@ -368,6 +392,41 @@ def render_emoji_search(library: LibraryStorage, query: str) -> str:
         lines.append(f"<code>{escape(tg_emoji_html(emoji_id, alt))}</code>")
         lines.append("")
     lines.append("Скопируй готовый тег в пост или попроси агента взять эти emoji.")
+    return "\n".join(lines)
+
+
+def render_decoration_report(library: LibraryStorage, result, draft_path: str) -> str:
+    lines = [
+        f"<b>Расставил emoji: {result.decorated_lines}</b>",
+        f"Профиль: <b>{escape(library.active_profile_name())}</b>",
+        f"Черновик: <code>{escape(draft_path)}</code>",
+        "",
+    ]
+    for suggestion in result.suggestions:
+        if not suggestion.chosen:
+            continue
+        match = suggestion.chosen
+        item = match.record
+        alt = item.get("alt") or item.get("sticker_emoji") or "🎁"
+        labels = ", ".join(item.get("labels", [])) or "без названия"
+        preview = suggestion.text.strip()[:38]
+        lines.append(
+            f"{tg_emoji_html(match.custom_emoji_id, alt)} <code>{short_id(match.custom_emoji_id)}</code> "
+            f"- {escape(labels)} ({match.score:.1f})"
+        )
+        lines.append(f"  <i>{escape(preview)}…</i>" if len(suggestion.text.strip()) > 38 else f"  <i>{escape(preview)}</i>")
+        if suggestion.alternatives:
+            swaps = " ".join(
+                tg_emoji_html(
+                    alternative.custom_emoji_id,
+                    alternative.record.get("alt") or alternative.record.get("sticker_emoji") or "🎁",
+                )
+                for alternative in suggestion.alternatives
+            )
+            lines.append(f"  замены: {swaps}")
+        lines.append("")
+
+    lines.append("Пост выше готов к отправке. Чтобы заменить emoji, отредактируй файл черновика.")
     return "\n".join(lines)
 
 

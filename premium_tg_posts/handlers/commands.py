@@ -15,6 +15,7 @@ from premium_tg_posts.handlers.callbacks import (
     render_owner,
     render_profiles,
 )
+from premium_tg_posts.handlers.collector import apply_decoration
 from premium_tg_posts.services.drafts import DraftSendError, send_html_draft
 from premium_tg_posts.services.post_collector import save_reference_post
 from premium_tg_posts.services.storage import LibraryStorage
@@ -33,12 +34,14 @@ router = Router(name="commands")
 HELP_TEXT = """<b>Сборщик материалов для Codex / Claude</b>
 Автор: @fiscaldev
 
-Рабочий порядок:
+Если пост уже написан и нужно только расставить emoji:
 1. Отправь premium emoji пачкой или до 5 ссылок на emoji-pack, каждую с новой строки.
-2. Нафорварди примеры постов. Я сохраню текст, entities и raw JSON, без медиа.
-3. Подпиши emoji через AI или вручную, если хочешь помочь агенту с визуальным смыслом.
-4. Нажми <b>Сгенерировать пост на тему</b> и отправь тему будущего поста.
-5. Когда Codex или Claude сохранит HTML в outbox активного профиля, бот отправит его сам.
+2. Нажми <b>AI: назвать emoji по ассетам</b> и попроси Codex / Claude выполнить задачу — агент проставит подписи и смысловые теги по картинкам.
+3. Нажми <b>Добавить emoji в мой пост</b> и пришли свой пост. Верну его с расставленными emoji, форматирование сохранится.
+
+Если нужен пост с нуля:
+4. Нафорварди примеры постов — сохраню текст, entities и raw JSON, без медиа.
+5. Нажми <b>Сгенерировать пост на тему</b> и отправь тему. Когда Codex или Claude сохранит HTML в outbox, бот отправит его сам.
 
 Если нужно разделять разные тематики, открой <b>Профили</b>, создай профиль с любым названием и загружай emoji/посты уже внутрь него.
 
@@ -93,6 +96,24 @@ async def emojis_command(message: Message, library: LibraryStorage) -> None:
         return
 
     await message.answer(render_emojis(library), reply_markup=back_menu(), disable_web_page_preview=True)
+
+
+@router.message(Command("decorate"))
+async def decorate_command(message: Message, library: LibraryStorage) -> None:
+    source = message.reply_to_message
+    if not source:
+        await answer_html(
+            message,
+            "Ответь командой <code>/decorate</code> на сообщение со своим постом — "
+            "я подберу emoji под смысл строк и пришлю готовый текст.\n\n"
+            "Или нажми <b>Добавить emoji в мой пост</b> в меню и отправь пост следующим сообщением.",
+        )
+        return
+    text, entities = message_text_and_entities(source)
+    if not text.strip():
+        await answer_html(message, "В этом сообщении нет текста, расставлять emoji не в чем.")
+        return
+    await apply_decoration(message, library, text, entities)
 
 
 @router.message(Command("find"))

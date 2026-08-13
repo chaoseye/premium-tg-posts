@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from premium_tg_posts.services.emoji_search import (
+    expand_tokens,
     search_emojis,
     suggest_for_topic,
     token_similarity,
@@ -104,6 +105,83 @@ class SearchTests(unittest.TestCase):
 
     def test_limit_is_respected(self) -> None:
         self.assertEqual(len(search_emojis(ALL, "gifts topics", limit=2)), 2)
+
+
+ROCKET = {
+    "custom_emoji_id": "3000000000000000001",
+    "alt": "🚀",
+    "labels": ["ракета"],
+    "tags": ["запуск", "старт", "релиз"],
+    "last_seen_at": "2026-08-13T10:00:00+00:00",
+}
+PACKAGE = {
+    "custom_emoji_id": "3000000000000000002",
+    "alt": "📦",
+    "labels": ["коробка"],
+    "tags": ["релиз", "версия"],
+    "last_seen_at": "2026-08-13T11:00:00+00:00",
+}
+UNRELATED = {
+    "custom_emoji_id": "3000000000000000003",
+    "alt": "🐱",
+    "labels": ["кот"],
+    "tags": ["животное", "мем"],
+    "last_seen_at": "2026-08-13T12:00:00+00:00",
+}
+TAGGED = [ROCKET, PACKAGE, UNRELATED]
+
+
+class TagExpansionTests(unittest.TestCase):
+    def test_expansion_collects_sibling_tags(self) -> None:
+        terms = expand_tokens(TAGGED, ["запуск"])
+        self.assertIn("старт", terms)
+        self.assertIn("релиз", terms)
+        self.assertNotIn("запуск", terms)  # the query word itself is not a new concept
+
+    def test_reaches_emoji_with_no_shared_word(self) -> None:
+        # "запуск" never appears in PACKAGE, but both share the concept "релиз".
+        direct = search_emojis(TAGGED, "запуск", expand=False)
+        expanded = search_emojis(TAGGED, "запуск", expand=True)
+
+        self.assertEqual([m.custom_emoji_id for m in direct], [ROCKET["custom_emoji_id"]])
+        self.assertIn(PACKAGE["custom_emoji_id"], [m.custom_emoji_id for m in expanded])
+
+    def test_related_hits_never_outrank_direct_ones(self) -> None:
+        matches = search_emojis(TAGGED, "запуск")
+        self.assertEqual(matches[0].custom_emoji_id, ROCKET["custom_emoji_id"])
+        self.assertGreater(matches[0].score, matches[1].score)
+
+    def test_related_hits_are_marked(self) -> None:
+        matches = search_emojis(TAGGED, "запуск")
+        package = next(m for m in matches if m.custom_emoji_id == PACKAGE["custom_emoji_id"])
+        self.assertIn("related", package.matched_on)
+
+    def test_expansion_does_not_drag_in_everything(self) -> None:
+        matches = search_emojis(TAGGED, "запуск")
+        self.assertNotIn(UNRELATED["custom_emoji_id"], [m.custom_emoji_id for m in matches])
+
+    def test_tag_count_does_not_inflate_a_direct_hit(self) -> None:
+        # Regression: expansion used to feed a matching emoji its own sibling
+        # tags back, so the most heavily tagged emoji won regardless of how well
+        # it actually matched.
+        precise = {
+            "custom_emoji_id": "3000000000000000010",
+            "alt": "🏷",
+            "labels": ["скидка"],
+            "tags": ["скидка"],
+            "last_seen_at": "2026-08-13T10:00:00+00:00",
+        }
+        noisy = {
+            "custom_emoji_id": "3000000000000000011",
+            "alt": "🐱",
+            "labels": ["кот"],
+            "tags": ["скидка", *(f"тег{i}" for i in range(10))],
+            "last_seen_at": "2026-08-13T11:00:00+00:00",
+        }
+
+        matches = search_emojis([precise, noisy], "скидка")
+
+        self.assertEqual(matches[0].custom_emoji_id, precise["custom_emoji_id"])
 
 
 class SuggestForTopicTests(unittest.TestCase):

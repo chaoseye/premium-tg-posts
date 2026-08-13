@@ -7,7 +7,8 @@ from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import Message
 
-from premium_tg_posts.handlers.callbacks import render_emoji_search
+from premium_tg_posts.handlers.callbacks import render_decoration_report, render_emoji_search
+from premium_tg_posts.services.post_decorator import TELEGRAM_TEXT_LIMIT, decorate_post
 from premium_tg_posts.handlers.replies import answer_html, edit_or_answer_html
 from premium_tg_posts.services.emoji_collector import collect_custom_emoji_set, collect_custom_emojis
 from premium_tg_posts.services.post_collector import save_reference_post
@@ -223,6 +224,17 @@ async def handle_user_mode(
         )
         return True
 
+    if mode == "decorate_post":
+        text, entities = message_text_and_entities(message)
+        if not text.strip():
+            await message.answer(
+                "Не вижу текста поста. Нажми кнопку еще раз и пришли пост обычным сообщением.",
+                reply_markup=main_menu(),
+            )
+            return True
+        await apply_decoration(message, library, text, entities)
+        return True
+
     if mode == "emoji_find":
         query, _ = message_text_and_entities(message)
         query = query.strip()
@@ -294,6 +306,64 @@ async def handle_user_mode(
         return True
 
     return False
+
+
+async def apply_decoration(message: Message, library: LibraryStorage, text: str, entities: list) -> None:
+    """Insert emoji into an author's finished post and hand it back ready to send."""
+    records = library.emoji_records(sort_by="last_seen_at", reverse=True)
+    result = decorate_post(text, entities, records)
+
+    if not result.used:
+        untagged = sum(1 for item in records if not item.get("tags"))
+        await answer_html(
+            message,
+            "\n".join(
+                [
+                    "Не нашел ни одного emoji, подходящего по смыслу к строкам поста.",
+                    "",
+                    f"В профиле emoji: {len(records)}, из них без смысловых тегов: {untagged}.",
+                    "Подбор идет по подписям и тегам. Пока их нет, сопоставлять текст не с чем.",
+                    "",
+                    "Нажми <b>AI: назвать emoji по ассетам</b> — агент проставит подписи и теги "
+                    "по картинкам, после этого расстановка заработает.",
+                ]
+            ),
+            reply_markup=main_menu(),
+        )
+        return
+
+    draft = library.save_outbox_draft(message_title(message, "decorated"), result.html)
+    draft_display = draft.relative_to(library.root).as_posix()
+
+    if result.over_limit:
+        await answer_html(
+            message,
+            f"Пост с emoji получился длиннее лимита Telegram ({len(result.html)} из {TELEGRAM_TEXT_LIMIT} "
+            "символов), поэтому отправить его одним сообщением нельзя.\n\n"
+            f"Сохранил в <code>{escape(draft_display)}</code> - разбей на части и отправь вручную.",
+            reply_markup=main_menu(),
+        )
+        return
+
+    try:
+        sent = await message.answer(result.html, disable_web_page_preview=True)
+    except TelegramBadRequest as exc:
+        await answer_html(
+            message,
+            "Telegram не принял готовый пост.\n"
+            f"Ошибка: <code>{escape(str(exc))}</code>\n\n"
+            f"Черновик сохранен: <code>{escape(draft_display)}</code>",
+            reply_markup=main_menu(),
+        )
+        return
+
+    # The outbox watcher would otherwise deliver the same post a second time.
+    library.mark_draft_sent(draft, sent.message_id)
+    await answer_html(
+        message,
+        render_decoration_report(library, result, draft_display),
+        reply_markup=after_collect_menu(),
+    )
 
 
 def dedupe_emoji_rows(rows: list[dict]) -> list[dict]:

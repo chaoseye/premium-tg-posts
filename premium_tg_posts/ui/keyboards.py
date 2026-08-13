@@ -13,6 +13,9 @@ def main_menu() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="Показать базу emoji", callback_data="menu:emojis"),
             ],
             [
+                InlineKeyboardButton(text="Добавить emoji в мой пост", callback_data="mode:decorate_post"),
+            ],
+            [
                 InlineKeyboardButton(text="Найти emoji по смыслу", callback_data="mode:emoji_find"),
             ],
             [
@@ -74,6 +77,9 @@ def after_collect_menu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="Показать базу emoji", callback_data="menu:emojis"),
+            ],
+            [
+                InlineKeyboardButton(text="Добавить emoji в мой пост", callback_data="mode:decorate_post"),
             ],
             [
                 InlineKeyboardButton(text="Найти emoji по смыслу", callback_data="mode:emoji_find"),

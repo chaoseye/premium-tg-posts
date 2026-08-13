@@ -51,6 +51,7 @@ python run_bot.py
 - `/profiles` - show and switch material profiles.
 - `/emojis` - list recent saved premium/custom emoji.
 - `/find запрос` - find emoji by label, tag, pack title, or the emoji symbol itself; returns ready `<tg-emoji>` tags.
+- `/decorate` as a reply - insert premium emoji into the replied post and send it back ready to forward.
 - `/label short_id описание` - optionally add a human hint to an emoji.
 - `/label last описание` - optionally label the most recently seen emoji.
 - `/template Название\nтекст шаблона` - save a text template.
@@ -63,6 +64,7 @@ Commands are fallback controls. The normal UI is the inline menu:
 
 - `Профили` - create or switch named workspaces for different themes/projects.
 - `Показать базу emoji` - recent premium/custom emoji plus short IDs.
+- `Добавить emoji в мой пост` - send your finished post and get it back with premium emoji placed into it.
 - `Найти emoji по смыслу` - search the library by meaning and get ready-to-paste `<tg-emoji>` tags.
 - `Сгенерировать пост на тему` - the next message is saved as a post-generation request for Codex / Claude.
 - `Готовые посты и отправка` - outbox files and manual send button.
@@ -84,6 +86,24 @@ Commands are fallback controls. The normal UI is the inline menu:
 7. The AI agent writes the final post as an HTML file into the outbox path named in that request.
 8. The bot auto-pushes the new draft to the owner. You can also press `Отправить последний готовый пост`.
 
+## Adding Emoji To Your Own Post
+
+The bot does not have to write the post. If you already have the text, it can place
+premium emoji into it:
+
+1. Press `Добавить emoji в мой пост`, then send the post as a normal message.
+   Alternatively reply `/decorate` to a message that already contains the post.
+2. The bot matches every line against the emoji library, inserts one emoji per line
+   for the strongest matches, and sends the finished post back ready to forward.
+3. The same post is saved to the profile outbox so it can be edited or re-sent.
+
+Bold, italic, links, and other formatting survive: entities are clipped per line and
+re-rendered as Telegram HTML. Lines that already start with an emoji, or that already
+contain a custom emoji, are left untouched. At most five emoji are inserted per post,
+never the same one twice, and lines with only a weak match stay bare.
+
+Quality depends entirely on `tags` — see below.
+
 ## Finding Emoji
 
 Large libraries are hard to use by eye, so the bot can search them.
@@ -97,10 +117,22 @@ The same ranking feeds post generation: every post-generation request embeds a
 `Candidate Emoji For This Topic` table with the best matches for that topic, so the
 agent gets a short shortlist instead of only a link to the whole catalog.
 
-Search reads labels, so an unlabeled library returns nothing. Label first via
-`AI: назвать emoji по ассетам` or `Опц.: вручную назвать emoji`. When no label matches a
-topic, the request falls back to the most recently added emoji and says explicitly that
-those are not topic matches.
+### Meaning Comes From Tags
+
+Matching is lexical, so it only reaches as far as the words stored on each emoji. The
+`tags` field is what turns it into something that behaves semantically: `AI: назвать emoji
+по ассетам` now asks the agent to write, per emoji, the words a post would actually use
+to mean it — synonyms, what it stands for, situations, tone. A rocket tagged
+`запуск, старт, релиз, анонс` is found by all four words, not just by "ракета".
+
+Tags also form a small concept graph. When a query word hits one emoji's tags, that
+emoji's remaining tags become related concepts and can reach emoji that share no word
+with the query at all. Related hits are scored lower and never outrank a direct match.
+
+Without labels and tags there is nothing to match against: `/find` reports how many emoji
+are unlabeled, and decorating a post reports that it found nothing. When no label matches
+a topic, a post-generation request falls back to the most recently added emoji and says
+explicitly that those are not topic matches.
 
 ## Owner Detection
 

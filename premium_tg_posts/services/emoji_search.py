@@ -31,6 +31,10 @@ PREFIX = 0.6
 SUBSTRING = 0.35
 SYMBOL_HIT = 4.0
 
+# Related concepts reached through the tag graph count, but never outrank a
+# direct hit on the query itself.
+EXPANSION = 0.4
+
 
 @dataclass(frozen=True)
 class EmojiMatch:
@@ -121,15 +125,57 @@ def score_record(record: dict[str, Any], tokens: list[str], symbols: set[str]) -
     return total, matched_on
 
 
-def search_emojis(records: Iterable[dict[str, Any]], query: str, limit: int = 15) -> list[EmojiMatch]:
+def expand_tokens(records: list[dict[str, Any]], tokens: list[str], limit: int = 12) -> list[str]:
+    """Second hop through the tag graph.
+
+    Emoji whose own tags or labels match a query word contribute their *other*
+    tags as related concepts. That lets "запуск" reach an emoji tagged
+    "старт, ракета" even though the topic never says "ракета". The library's own
+    annotations act as the concept graph, so no external model is involved.
+    """
+    if not tokens:
+        return []
+
+    direct = set(tokens)
+    related: dict[str, int] = {}
+    for record in records:
+        own_tokens = _field_tokens(record, "tags") + _field_tokens(record, "labels")
+        if not any(token_similarity(token, own) > 0 for token in tokens for own in own_tokens):
+            continue
+        for tag_token in _field_tokens(record, "tags"):
+            if tag_token in direct:
+                continue
+            related[tag_token] = related.get(tag_token, 0) + 1
+
+    ranked = sorted(related.items(), key=lambda item: (-item[1], item[0]))
+    return [term for term, _ in ranked[:limit]]
+
+
+def search_emojis(
+    records: Iterable[dict[str, Any]],
+    query: str,
+    limit: int = 15,
+    expand: bool = True,
+) -> list[EmojiMatch]:
+    rows = list(records)
     tokens = tokenize(query)
     symbols = query_symbols(query)
     if not tokens and not symbols:
         return []
 
+    expanded = expand_tokens(rows, tokens) if expand else []
+
     matches: list[EmojiMatch] = []
-    for record in records:
+    for record in rows:
         score, matched_on = score_record(record, tokens, symbols)
+        # Only reach for related concepts when the query itself missed. Scoring a
+        # direct hit against expansion terms would feed it its own sibling tags
+        # back, inflating whichever emoji happens to carry the most tags.
+        if expanded and score == 0:
+            related_score, related_fields = score_record(record, expanded, set())
+            if related_score > 0:
+                score = related_score * EXPANSION
+                matched_on = related_fields | {"related"}
         if score > 0:
             matches.append(EmojiMatch(record=record, score=score, matched_on=tuple(sorted(matched_on))))
 

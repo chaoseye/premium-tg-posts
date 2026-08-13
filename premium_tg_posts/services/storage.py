@@ -388,8 +388,24 @@ class LibraryStorage:
             "",
             "## Task",
             "",
-            f"Inspect the downloaded emoji assets and add concise human labels to `{self._display_path(self.emojis_json)}`.",
-            f"After editing labels, re-render `{self._display_path(self.premium_emojis_md)}` with:",
+            f"Inspect the downloaded emoji assets and fill in two fields per record in "
+            f"`{self._display_path(self.emojis_json)}`:",
+            "",
+            "- `labels`: what the emoji literally shows, 2-4 words.",
+            "- `tags`: the words a post would actually use to mean this emoji.",
+            "",
+            "The tags decide whether the bot can find this emoji later, so write them for matching, "
+            "not for describing. For each emoji add 5-12 tags covering:",
+            "",
+            "- synonyms of the object itself (`ракета`, `rocket`);",
+            "- what it stands for (`запуск`, `старт`, `рост`, `ускорение`);",
+            "- situations where a post would use it (`анонс`, `новинка`, `релиз`);",
+            "- tone, if pronounced (`срочно`, `празднично`, `предупреждение`).",
+            "",
+            "Write tags in the language the posts are written in, and add English only when the term is "
+            "used as-is. Single words work better than phrases. Do not repeat the label verbatim.",
+            "",
+            f"After editing, re-render `{self._display_path(self.premium_emojis_md)}` with:",
             "",
             "```powershell",
             "python -B -c \"from pathlib import Path; from premium_tg_posts.services.storage import LibraryStorage; LibraryStorage(Path('storage')).render_emojis_markdown()\"",
@@ -397,8 +413,8 @@ class LibraryStorage:
             "",
             "## Emoji Assets",
             "",
-            "| Current label | Alt | Type | Short ID | Custom emoji ID | Asset | Preview | SVG | HTML tag |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Current label | Current tags | Alt | Type | Short ID | Custom emoji ID | Asset | Preview | SVG | HTML tag |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for item in rows:
             emoji_id = item.get("custom_emoji_id", "")
@@ -414,6 +430,7 @@ class LibraryStorage:
                 + " | ".join(
                     [
                         _md_cell(labels),
+                        _md_cell(", ".join(item.get("tags", [])) or "untagged"),
                         _md_cell(alt),
                         _md_cell(asset_type),
                         f"`{short_id(emoji_id)}`",
@@ -476,6 +493,11 @@ class LibraryStorage:
         ]
         request_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return request_path
+
+    def save_outbox_draft(self, title: str, html: str) -> Path:
+        path = self._unique_file(self.outbox_dir, f"{local_stamp()}-{slugify(title, 'post')}", ".html")
+        path.write_text(html.strip() + "\n", encoding="utf-8")
+        return path
 
     def find_emojis(self, query: str, limit: int = 15) -> list[EmojiMatch]:
         return search_emojis(self.emoji_records(sort_by="last_seen_at", reverse=True), query, limit=limit)
