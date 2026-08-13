@@ -332,7 +332,8 @@ async def apply_decoration(message: Message, library: LibraryStorage, text: str,
         )
         return
 
-    draft = library.save_outbox_draft(message_title(message, "decorated"), result.html)
+    # claim=True: the watcher must not deliver this while we are still sending it.
+    draft = library.save_outbox_draft(message_title(message, "decorated"), result.html, claim=True)
     draft_display = draft.relative_to(library.root).as_posix()
 
     if result.over_limit:

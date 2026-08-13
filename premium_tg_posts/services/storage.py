@@ -515,9 +515,14 @@ class LibraryStorage:
         request_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return request_path
 
-    def save_outbox_draft(self, title: str, html: str) -> Path:
+    def save_outbox_draft(self, title: str, html: str, claim: bool = False) -> Path:
         path = self._unique_file(self.outbox_dir, f"{local_stamp()}-{slugify(title, 'post')}", ".html")
         path.write_text(html.strip() + "\n", encoding="utf-8")
+        if claim:
+            # Reserve it before the caller makes any network call. The outbox
+            # watcher polls every couple of seconds, and a draft written but not
+            # yet marked looks pending to it - which delivered the post twice.
+            self.mark_draft_sent(path, message_id=None)
         return path
 
     def find_emojis(self, query: str, limit: int = 15) -> list[EmojiMatch]:
