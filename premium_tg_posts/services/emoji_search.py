@@ -15,6 +15,10 @@ IGNORED_SYMBOLS = frozenset({"\ufe0f", "\ufe0e", "\u200d"})
 MIN_PREFIX = 3
 MIN_SUBSTRING = 4
 
+# Index granularity. Must not exceed MIN_PREFIX, or the candidate filter would
+# drop rows that token_similarity would still match.
+WINDOW = 3
+
 # Share of the longer token that a common stem must cover to count as a match.
 STEM_RATIO = 0.6
 
@@ -97,12 +101,79 @@ def _field_tokens(record: dict[str, Any], field: str) -> list[str]:
     return tokens
 
 
-def score_record(record: dict[str, Any], tokens: list[str], symbols: set[str]) -> tuple[float, set[str]]:
+class EmojiIndex:
+    """Tokenised view of a library, built once and reused across queries.
+
+    Decorating a post runs one search per line. Re-tokenising every record for
+    every line dominates the cost once a library reaches thousands of emoji, so
+    the tokens are computed here and the scorer just reads them.
+    """
+
+    __slots__ = ("records", "field_tokens", "alts", "windows", "short")
+
+    def __init__(self, records: Iterable[dict[str, Any]]) -> None:
+        self.records = list(records)
+        self.field_tokens: list[dict[str, list[str]]] = []
+        self.alts: list[str] = []
+        # token window -> record positions, so a query only scores plausible rows
+        self.windows: dict[str, set[int]] = {}
+        # field tokens shorter than a window, kept whole
+        self.short: dict[str, set[int]] = {}
+
+        for position, record in enumerate(self.records):
+            cache = {field: _field_tokens(record, field) for field, _ in FIELD_WEIGHTS}
+            self.field_tokens.append(cache)
+            self.alts.append(f"{record.get('alt') or ''}{record.get('sticker_emoji') or ''}")
+            for tokens in cache.values():
+                for token in tokens:
+                    if len(token) < WINDOW:
+                        self.short.setdefault(token, set()).add(position)
+                        continue
+                    for start in range(len(token) - WINDOW + 1):
+                        self.windows.setdefault(token[start : start + WINDOW], set()).add(position)
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def candidates(self, tokens: list[str], symbols: set[str]) -> list[int]:
+        """Positions worth scoring for this query.
+
+        Every match kind in `token_similarity` requires the query and the field
+        token to share their first WINDOW characters, or the query to appear
+        inside the field token - and in both cases the query's leading window is
+        one of the field token's windows. Short field tokens are indexed whole
+        and checked separately, so nothing is silently dropped.
+        """
+        if symbols:
+            return list(range(len(self.records)))
+
+        found: set[int] = set()
+        for token in tokens:
+            if len(token) >= WINDOW:
+                found |= self.windows.get(token[:WINDOW], set())
+            else:
+                found |= self.short.get(token, set())
+            # A short field token can still prefix-match a longer query.
+            for short_token, positions in self.short.items():
+                if token.startswith(short_token) or short_token.startswith(token):
+                    found |= positions
+        return sorted(found)
+
+
+def build_index(records: Iterable[dict[str, Any]] | EmojiIndex) -> EmojiIndex:
+    return records if isinstance(records, EmojiIndex) else EmojiIndex(records)
+
+
+def _score_tokens(
+    token_cache: dict[str, list[str]],
+    alt: str,
+    tokens: list[str],
+    symbols: set[str],
+) -> tuple[float, set[str]]:
     """Sum the best per-token hit, so covering more query words ranks higher."""
     matched_on: set[str] = set()
     total = 0.0
 
-    token_cache = {field: _field_tokens(record, field) for field, _ in FIELD_WEIGHTS}
     for query_token in tokens:
         best = 0.0
         best_field: str | None = None
@@ -116,16 +187,25 @@ def score_record(record: dict[str, Any], tokens: list[str], symbols: set[str]) -
             total += best
             matched_on.add(best_field)
 
-    if symbols:
-        alt = f"{record.get('alt') or ''}{record.get('sticker_emoji') or ''}"
-        if any(symbol in alt for symbol in symbols):
-            total += SYMBOL_HIT
-            matched_on.add("alt")
+    if symbols and any(symbol in alt for symbol in symbols):
+        total += SYMBOL_HIT
+        matched_on.add("alt")
 
     return total, matched_on
 
 
-def expand_tokens(records: list[dict[str, Any]], tokens: list[str], limit: int = 12) -> list[str]:
+def score_record(record: dict[str, Any], tokens: list[str], symbols: set[str]) -> tuple[float, set[str]]:
+    """Score a single record. Convenience wrapper; hot paths use the index."""
+    token_cache = {field: _field_tokens(record, field) for field, _ in FIELD_WEIGHTS}
+    alt = f"{record.get('alt') or ''}{record.get('sticker_emoji') or ''}"
+    return _score_tokens(token_cache, alt, tokens, symbols)
+
+
+def expand_tokens(
+    records: Iterable[dict[str, Any]] | EmojiIndex,
+    tokens: list[str],
+    limit: int = 12,
+) -> list[str]:
     """Second hop through the tag graph.
 
     Emoji whose own tags or labels match a query word contribute their *other*
@@ -136,13 +216,18 @@ def expand_tokens(records: list[dict[str, Any]], tokens: list[str], limit: int =
     if not tokens:
         return []
 
+    index = build_index(records)
     direct = set(tokens)
     related: dict[str, int] = {}
-    for record in records:
-        own_tokens = _field_tokens(record, "tags") + _field_tokens(record, "labels")
+    for position in index.candidates(tokens, set()):
+        cache = index.field_tokens[position]
+        tag_tokens = cache["tags"]
+        if not tag_tokens and not cache["labels"]:
+            continue
+        own_tokens = tag_tokens + cache["labels"]
         if not any(token_similarity(token, own) > 0 for token in tokens for own in own_tokens):
             continue
-        for tag_token in _field_tokens(record, "tags"):
+        for tag_token in tag_tokens:
             if tag_token in direct:
                 continue
             related[tag_token] = related.get(tag_token, 0) + 1
@@ -152,32 +237,42 @@ def expand_tokens(records: list[dict[str, Any]], tokens: list[str], limit: int =
 
 
 def search_emojis(
-    records: Iterable[dict[str, Any]],
+    records: Iterable[dict[str, Any]] | EmojiIndex,
     query: str,
     limit: int = 15,
     expand: bool = True,
 ) -> list[EmojiMatch]:
-    rows = list(records)
     tokens = tokenize(query)
     symbols = query_symbols(query)
     if not tokens and not symbols:
         return []
 
-    expanded = expand_tokens(rows, tokens) if expand else []
+    index = build_index(records)
+    expanded = expand_tokens(index, tokens) if expand else []
 
-    matches: list[EmojiMatch] = []
-    for record in rows:
-        score, matched_on = score_record(record, tokens, symbols)
-        # Only reach for related concepts when the query itself missed. Scoring a
-        # direct hit against expansion terms would feed it its own sibling tags
-        # back, inflating whichever emoji happens to carry the most tags.
-        if expanded and score == 0:
-            related_score, related_fields = score_record(record, expanded, set())
-            if related_score > 0:
-                score = related_score * EXPANSION
-                matched_on = related_fields | {"related"}
+    scored: dict[int, tuple[float, set[str]]] = {}
+    for position in index.candidates(tokens, symbols):
+        score, matched_on = _score_tokens(index.field_tokens[position], index.alts[position], tokens, symbols)
         if score > 0:
-            matches.append(EmojiMatch(record=record, score=score, matched_on=tuple(sorted(matched_on))))
+            scored[position] = (score, matched_on)
+
+    # Only reach for related concepts where the query itself missed. Scoring a
+    # direct hit against expansion terms would feed it its own sibling tags back,
+    # inflating whichever emoji happens to carry the most tags.
+    if expanded:
+        for position in index.candidates(expanded, set()):
+            if position in scored:
+                continue
+            related_score, related_fields = _score_tokens(
+                index.field_tokens[position], index.alts[position], expanded, set()
+            )
+            if related_score > 0:
+                scored[position] = (related_score * EXPANSION, related_fields | {"related"})
+
+    matches = [
+        EmojiMatch(record=index.records[position], score=score, matched_on=tuple(sorted(matched_on)))
+        for position, (score, matched_on) in scored.items()
+    ]
 
     # Newest first among equal scores, so repeated searches stay stable.
     matches.sort(key=lambda match: (match.score, str(match.record.get("last_seen_at", ""))), reverse=True)

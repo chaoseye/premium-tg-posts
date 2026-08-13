@@ -6,7 +6,7 @@ from typing import Any, Iterable, Sequence
 from aiogram.types import MessageEntity
 from aiogram.utils.text_decorations import html_decoration
 
-from premium_tg_posts.services.emoji_search import EmojiMatch, search_emojis
+from premium_tg_posts.services.emoji_search import EmojiMatch, build_index, search_emojis
 from premium_tg_posts.utils.text import tg_emoji_html
 
 # Telegram's own sendMessage ceiling; decorating must not push a post past it.
@@ -86,8 +86,9 @@ def decorate_post(
     records: Iterable[dict[str, Any]],
     max_emoji: int = MAX_EMOJI_DEFAULT,
 ) -> DecoratedPost:
-    rows = list(records)
     lines = split_lines_with_entities(text, entities)
+    # One search per line, so tokenise the library once instead of per line.
+    library = build_index(records)
 
     ranked: dict[int, list[EmojiMatch]] = {}
     for index, (line, line_entities) in enumerate(lines):
@@ -96,7 +97,7 @@ def decorate_post(
         # Respect what the author already put there.
         if _starts_with_pictograph(line) or _has_custom_emoji(line_entities):
             continue
-        matches = search_emojis(rows, line, limit=ALTERNATIVES + 3)
+        matches = search_emojis(library, line, limit=ALTERNATIVES + 3)
         if matches:
             ranked[index] = matches
 

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from premium_tg_posts.services.emoji_search import (
+    EmojiIndex,
     expand_tokens,
     search_emojis,
     suggest_for_topic,
@@ -182,6 +183,48 @@ class TagExpansionTests(unittest.TestCase):
         matches = search_emojis([precise, noisy], "скидка")
 
         self.assertEqual(matches[0].custom_emoji_id, precise["custom_emoji_id"])
+
+
+class CandidateFilterTests(unittest.TestCase):
+    """The index narrows what gets scored; it must not narrow what matches."""
+
+    def test_substring_match_survives_filtering(self) -> None:
+        record = {
+            "custom_emoji_id": "4000000000000000001",
+            "alt": "🏷",
+            "labels": ["суперскидка"],
+            "last_seen_at": "2026-08-13T10:00:00+00:00",
+        }
+        # "скидка" is inside "суперскидка" but shares no leading window with it.
+        self.assertTrue(search_emojis([record], "скидка"))
+
+    def test_short_field_token_matched_by_longer_query(self) -> None:
+        record = {
+            "custom_emoji_id": "4000000000000000002",
+            "alt": "👌",
+            "labels": ["ок"],
+            "last_seen_at": "2026-08-13T10:00:00+00:00",
+        }
+        self.assertTrue(search_emojis([record], "оке"))
+
+    def test_symbol_query_still_reaches_untagged_emoji(self) -> None:
+        record = {
+            "custom_emoji_id": "4000000000000000003",
+            "alt": "🔥",
+            "labels": [],
+            "tags": [],
+            "last_seen_at": "2026-08-13T10:00:00+00:00",
+        }
+        self.assertTrue(search_emojis([record], "🔥"))
+
+    def test_index_can_be_reused_across_queries(self) -> None:
+        index = EmojiIndex(TAGGED)
+        first = search_emojis(index, "запуск")
+        second = search_emojis(index, "запуск")
+        self.assertEqual(
+            [(m.custom_emoji_id, m.score) for m in first],
+            [(m.custom_emoji_id, m.score) for m in second],
+        )
 
 
 class SuggestForTopicTests(unittest.TestCase):
