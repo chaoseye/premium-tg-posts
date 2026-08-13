@@ -323,10 +323,8 @@ class LibraryStorage:
     def peek_user_mode(self, user_id: int) -> dict[str, Any] | None:
         return self.load_state().get("user_modes", {}).get(str(user_id))
 
-    def upsert_emoji(self, emoji_id: str, record: dict[str, Any]) -> dict[str, Any]:
-        data = self.load_emojis()
-        emojis = data.setdefault("emojis", {})
-        existing = emojis.get(emoji_id, {})
+    @staticmethod
+    def _merge_emoji_record(emoji_id: str, existing: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
         merged = {**existing, **{key: value for key, value in record.items() if value not in (None, "", [])}}
         merged["custom_emoji_id"] = emoji_id
         merged.setdefault("first_seen_at", utc_now_iso())
@@ -340,12 +338,35 @@ class LibraryStorage:
         tags = list(dict.fromkeys([*existing.get("tags", []), *record.get("tags", [])]))
         if tags:
             merged["tags"] = tags
+        return merged
 
+    def upsert_emoji(self, emoji_id: str, record: dict[str, Any]) -> dict[str, Any]:
+        data = self.load_emojis()
+        emojis = data.setdefault("emojis", {})
+        merged = self._merge_emoji_record(emoji_id, emojis.get(emoji_id, {}), record)
         emojis[emoji_id] = merged
         data["updated_at"] = utc_now_iso()
         self._write_json(self.emojis_json, data)
         self.render_emojis_markdown()
         return merged
+
+    def bulk_upsert_emojis(self, records: dict[str, dict[str, Any]]) -> int:
+        """Merge many emoji with a single read, write, and catalog render.
+
+        `upsert_emoji` rewrites `emojis.json` and re-renders the whole markdown
+        catalog on every call. That is fine for the handful of emoji in a chat
+        message, but quadratic for a pack import of several thousand.
+        """
+        if not records:
+            return 0
+        data = self.load_emojis()
+        emojis = data.setdefault("emojis", {})
+        for emoji_id, record in records.items():
+            emojis[emoji_id] = self._merge_emoji_record(emoji_id, emojis.get(emoji_id, {}), record)
+        data["updated_at"] = utc_now_iso()
+        self._write_json(self.emojis_json, data)
+        self.render_emojis_markdown()
+        return len(records)
 
     def update_emoji_label(self, selector: str, label: str) -> dict[str, Any] | None:
         data = self.load_emojis()
