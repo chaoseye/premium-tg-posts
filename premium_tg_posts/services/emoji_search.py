@@ -7,10 +7,29 @@ from typing import Any, Iterable
 
 TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
+# Small numerals count something else in a post - "два часа", "три подписки",
+# "пять человек", "Первое - ..., Второе - ...". In the library the same words
+# describe what is inside a picture: "три пальца", "два миньона", "две ладони".
+# An exact match between the two is almost always a false friend, and it scores
+# full marks, so a post about three subscriptions was given a picture of a hand.
+#
+# Dropped from the library's own words as well as from queries, which is the
+# point: "три пальца" stays reachable as "пальцы". Round and large numbers are
+# deliberately absent - a post saying "сорок лет" or "тысяча подписчиков" does
+# mean that number, and "утка 40" should answer it. Digits are kept too, so
+# "2024" still finds the emoji of that year.
+NUMERAL_WORDS = frozenset(
+    """
+    один одна одно два две три четыре пять шесть семь восемь девять десять
+    первый первое первая первых второй второе вторая третий третье третья
+    четвёртый четвертый четвёртое четвертое пятый пятое
+    """.split()
+)
+
 # Function words carry no meaning but match exactly and outweigh real hits: a
 # label like "звёзды в глазах" would score its "в" against the "в" in any
 # sentence. Reactions that happen to be short ("ок", "да", "нет") stay in.
-STOP_WORDS = frozenset(
+STOP_WORDS = NUMERAL_WORDS | frozenset(
     """
     а бы в во вот все всё где да для до же за и из или к как ко когда ли меня мне мы на
     над не нет ни но о об от по под при про с со та так там те то тут ты у уже чем что

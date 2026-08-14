@@ -222,6 +222,59 @@ class StopWordTests(unittest.TestCase):
         self.assertNotIn(starry["custom_emoji_id"], [m.custom_emoji_id for m in matches])
 
 
+class NumeralTests(unittest.TestCase):
+    """A number in a post counts something the picture is not about."""
+
+    def test_small_numerals_are_dropped(self) -> None:
+        self.assertEqual(tokenize("Три месяца не писал"), ["месяца", "писал"])
+        self.assertEqual(tokenize("Отключить на два часа"), ["отключить", "часа"])
+        self.assertEqual(tokenize("Первое — разборы проектов"), ["разборы", "проектов"])
+
+    def test_larger_and_written_numbers_survive(self) -> None:
+        # A post saying these does mean the number, and the library has emoji of
+        # exactly them.
+        for word in ("сорок", "тысяча", "миллион", "2024", "10"):
+            with self.subTest(word=word):
+                self.assertIn(word, tokenize(f"нам {word} лет"))
+
+    def test_a_gesture_no_longer_answers_a_counted_noun(self) -> None:
+        # Regression: "три подписки" scored an exact hit on the tag "три" and
+        # the post was decorated with a picture of a hand.
+        hand = {
+            "custom_emoji_id": "9700000000000000001",
+            "alt": "✌️",
+            "labels": ["три пальца"],
+            "tags": ["жест"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertEqual(search_emojis([hand], "Разыгрываем три подписки"), [])
+
+    def test_the_gesture_stays_reachable_by_what_it_shows(self) -> None:
+        hand = {
+            "custom_emoji_id": "9700000000000000002",
+            "alt": "✌️",
+            "labels": ["три пальца"],
+            "tags": ["жест"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertTrue(search_emojis([hand], "пальцы вверх"))
+        self.assertTrue(search_emojis([hand], "жест рукой"))
+
+    def test_loneliness_is_not_a_numeral(self) -> None:
+        # "один" is dropped, but the sense the label carried lives in its tags.
+        lonely = {
+            "custom_emoji_id": "9700000000000000003",
+            "alt": "😔",
+            "labels": ["пепе грустит один"],
+            "tags": ["грусть", "одиночество"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertTrue(search_emojis([lonely], "сижу в одиночестве"))
+
+
 class DirectVersusRelatedTests(unittest.TestCase):
     def test_direct_hit_outranks_a_higher_scoring_related_one(self) -> None:
         # Regression: weighting alone let an emoji sharing several generic tags
