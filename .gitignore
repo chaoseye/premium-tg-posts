@@ -21,3 +21,4 @@ storage/raw/*
 storage/outbox/*.html
 storage/profiles/**
 !storage/**/.gitkeep
+.claude/
