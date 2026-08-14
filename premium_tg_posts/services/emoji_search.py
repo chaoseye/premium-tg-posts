@@ -100,6 +100,16 @@ WINDOW = 3
 
 # Share of the longer token that a common stem must cover to count as a match.
 STEM_RATIO = 0.6
+
+# The same share, for the easier case where one word simply extends the other.
+# Containment is stronger evidence than a diverging stem, so it can afford a
+# lower bar - and it needs one: "кофейня" covers only 57% of "кофе", so a post
+# about a new coffee shop reached none of the twenty-six emoji tagged `кофе`.
+# The gap between the two values is not empty and not wide. It admits
+# "кофейня"/"кофе" while everything the guard was built for stays out:
+# "пол"/"полная" at 0.50, "ад"/"адрес" at 0.40, "домашний"/"дом" at 0.375, and
+# the stray one-letter pack names at 0.25.
+CONTAINS_RATIO = 0.55
 # ...and the stem must be at least this long. Three letters passes the ratio on
 # two five-letter words, which matched "месяц" against "месит тесто" in a real
 # post. Four costs 0.007 P@5 on the eval set - one position in one query - and
@@ -228,7 +238,7 @@ def token_similarity(query_token: str, field_token: str, strict: bool = False) -
     # real library, the unguarded rule matched "ад" against "адрес", "пол"
     # against "полная", and the stray pack-name letter "f" against every English
     # word in a post.
-    if len(query_token) >= MIN_PREFIX and shared == shorter and shorter >= STEM_RATIO * longer:
+    if len(query_token) >= MIN_PREFIX and shared == shorter and shorter >= CONTAINS_RATIO * longer:
         return PREFIX
 
     if strict and not _endings_look_inflectional(query_token[shared:], field_token[shared:]):
@@ -329,7 +339,7 @@ class EmojiIndex:
             # scanned separately. The prefix rule caps how far apart in length a
             # matching pair may be, and past that bound no short token can reach
             # this query - "ок" can still be found by "оке", never by "окажется".
-            if len(token) * STEM_RATIO <= WINDOW - 1:
+            if len(token) * CONTAINS_RATIO <= WINDOW - 1:
                 for short_token, positions in self.short.items():
                     if token.startswith(short_token) or short_token.startswith(token):
                         found |= positions

@@ -515,6 +515,18 @@ class PrefixLengthTests(unittest.TestCase):
         self.assertEqual(token_similarity("frogemoji", "f"), 0.0)
         self.assertEqual(token_similarity("2024", "2"), 0.0)
 
+    def test_a_derived_word_reaches_its_root(self) -> None:
+        # "Кофейня" covers 57% of "кофе" - under the old bar, so a post about a
+        # new coffee shop reached none of the emoji tagged `кофе`.
+        self.assertGreater(token_similarity("кофейня", "кофе"), 0.0)
+        self.assertGreater(token_similarity("спортсмен", "спорт"), 0.0)
+        self.assertGreater(token_similarity("усталость", "устал"), 0.0)
+
+    def test_the_lower_bar_still_refuses_what_it_was_built_for(self) -> None:
+        for query, field in (("полная", "пол"), ("адрес", "ад"), ("домашний", "дом"), ("frogemoji", "f")):
+            with self.subTest(query=query):
+                self.assertEqual(token_similarity(query, field), 0.0)
+
     def test_real_extensions_still_match(self) -> None:
         for query, field in (("чаты", "чат"), ("кот", "котик"), ("мемы", "мем")):
             with self.subTest(query=query):
