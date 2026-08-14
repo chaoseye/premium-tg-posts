@@ -316,6 +316,27 @@ class NumeralTests(unittest.TestCase):
         self.assertEqual(tokenize("Поднял обе руки"), ["поднял", "руки"])
         self.assertEqual(tokenize("Выручка выросла вдвое"), ["выручка", "выросла"])
 
+    def test_case_forms_are_dropped_too(self) -> None:
+        # Regression: "двое" was a stop word but "двоих" was not, so "Десерт
+        # делят на двоих" was decorated from the label "разговор двоих".
+        self.assertEqual(tokenize("Десерт делят на двоих"), ["десерт", "делят"])
+        self.assertEqual(tokenize("машет обеими лапками"), ["машет", "лапками"])
+        self.assertEqual(tokenize("в двух словах о первом"), ["словах"])
+
+    def test_family_is_not_a_numeral(self) -> None:
+        # "Семью" is the instrumental of "семь" and the accusative of "семья" at
+        # once. Two emoji are tagged `семья`, so the word stays.
+        family = {
+            "custom_emoji_id": "9200000000000000001",
+            "alt": "👵",
+            "labels": ["пожилая женщина"],
+            "tags": ["возраст", "семья"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertIn("семью", tokenize("собрались всей семью"))
+        self.assertTrue(search_emojis([family], "провёл вечер с семьёй"))
+
     def test_a_couple_is_not_a_count(self) -> None:
         # "Пара" names a couple as often as it counts, and the library uses it
         # in that sense, so it stays a word.

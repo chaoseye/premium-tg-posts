@@ -30,8 +30,19 @@ NUMERAL_WORDS = frozenset(
     четвёртый четвертый четвёртое четвертое пятый пятое
     двое трое четверо пятеро шестеро семеро оба обе
     вдвое втрое вчетверо
+    двоих двоим двоими троих троим троими четверых четверым четверыми
+    пятерых пятерым шестерых семерых обоих обоим обоими обеих обеим обеими
+    одного одному одним одном одной одну двух двум двумя трёх трех трём трем тремя
+    четырёх четырех четырём четырьмя пяти пятью шести шестью семи
+    восьми восемью восьмью девяти девятью десяти десятью
+    первого первому первым первом второго второму втором третьего третьему третьем
     """.split()
 )
+
+# One case form is missing from that list on purpose. "Семью" is the instrumental
+# of "семь" and the accusative of "семья" at the same time, and two emoji are
+# tagged `семья`, which a post reaches today by writing "всей семьёй". Dropping
+# the word would cost that to save nothing: no label or tag contains it.
 
 # Words that describe a pose in the library and something else entirely in a
 # post. Forty-three labels read "стоит ...", and every one of them keeps its
