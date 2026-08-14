@@ -6,7 +6,7 @@ from typing import Any, Iterable, Sequence
 from aiogram.types import MessageEntity
 from aiogram.utils.text_decorations import html_decoration
 
-from premium_tg_posts.services.emoji_search import EmojiMatch, build_index, search_emojis
+from premium_tg_posts.services.emoji_search import EmojiMatch, build_index, for_posts, search_emojis
 from premium_tg_posts.utils.text import emoji_fallback, tg_emoji_html
 
 # Telegram's own sendMessage ceiling; decorating must not push a post past it.
@@ -88,7 +88,10 @@ def decorate_post(
 ) -> DecoratedPost:
     lines = split_lines_with_entities(text, entities)
     # One search per line, so tokenise the library once instead of per line.
-    library = build_index(records)
+    # Pack self-promo cards are dropped first: "ссылки на паки" matched the word
+    # "ссылка" in a real post and put an advertisement for someone else's pack
+    # into it.
+    library = build_index(for_posts(records))
 
     ranked: dict[int, list[EmojiMatch]] = {}
     for index, (line, line_entities) in enumerate(lines):

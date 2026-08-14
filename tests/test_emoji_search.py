@@ -7,6 +7,7 @@ from pathlib import Path
 from premium_tg_posts.services.emoji_search import (
     EmojiIndex,
     expand_tokens,
+    for_posts,
     search_emojis,
     suggest_for_topic,
     token_similarity,
@@ -463,6 +464,50 @@ class CandidateFilterTests(unittest.TestCase):
             [(m.custom_emoji_id, m.score) for m in first],
             [(m.custom_emoji_id, m.score) for m in second],
         )
+
+
+PROMO_CARD = {
+    "custom_emoji_id": "9900000000000000001",
+    "alt": "©️",
+    "labels": ["ссылки на паки"],
+    "tags": ["ссылка", "реклама", "паки"],
+    "promo": True,
+    "last_seen_at": "2026-08-14T23:00:00+00:00",
+}
+MEGAPHONE = {
+    "custom_emoji_id": "9900000000000000002",
+    "alt": "📢",
+    "labels": ["миньон с мегафоном"],
+    "tags": ["объявление", "анонс", "внимание", "реклама"],
+    "last_seen_at": "2026-08-14T10:00:00+00:00",
+}
+
+
+class PromoCardTests(unittest.TestCase):
+    """Cards advertising their own pack must never be offered for a post."""
+
+    def test_for_posts_drops_them(self) -> None:
+        self.assertEqual(for_posts([PROMO_CARD, MEGAPHONE]), [MEGAPHONE])
+
+    def test_an_advertising_tag_alone_is_not_enough(self) -> None:
+        # "реклама" also sits on a megaphone, which is what an announcement post
+        # wants. Only the hand-set flag excludes.
+        self.assertIn(MEGAPHONE, for_posts([MEGAPHONE]))
+
+    def test_topic_candidates_exclude_them(self) -> None:
+        matches, is_fallback = suggest_for_topic([PROMO_CARD, MEGAPHONE], "ссылка на оплату")
+        self.assertNotIn(PROMO_CARD["custom_emoji_id"], [m.custom_emoji_id for m in matches])
+        self.assertTrue(is_fallback or matches)
+
+    def test_recent_fallback_excludes_them_too(self) -> None:
+        # The card is the newest record, so an unfiltered fallback would lead with it.
+        matches, is_fallback = suggest_for_topic([PROMO_CARD, MEGAPHONE], "квантовая механика")
+        self.assertTrue(is_fallback)
+        self.assertEqual([m.custom_emoji_id for m in matches], [MEGAPHONE["custom_emoji_id"]])
+
+    def test_direct_search_still_finds_them(self) -> None:
+        # /find is an explicit lookup; the owner may still want to send one.
+        self.assertTrue(search_emojis([PROMO_CARD], "ссылки на паки"))
 
 
 class SuggestForTopicTests(unittest.TestCase):

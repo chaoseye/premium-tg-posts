@@ -382,6 +382,24 @@ def search_emojis(
     return matches[:limit]
 
 
+def is_promo(record: dict[str, Any]) -> bool:
+    """Does this emoji advertise the pack it came from?
+
+    Packs ship self-promo cards among their emoji: the author's @username, a
+    link to the emoji bot, "more emoji", "create your name". They are valid
+    emoji and stay in the library - the owner may still want to send one - but
+    they mean nothing, so nothing may offer them for a post. Marked by hand on
+    the record, because no rule separates them from a picture *of* advertising:
+    a megaphone tagged "реклама" is exactly what an announcement post wants.
+    """
+    return bool(record.get("promo"))
+
+
+def for_posts(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The part of a library worth putting into someone's post."""
+    return [record for record in records if not is_promo(record)]
+
+
 def suggest_for_topic(
     records: Iterable[dict[str, Any]],
     topic: str,
@@ -393,7 +411,7 @@ def suggest_for_topic(
     match at all, so fall back to the most recent emoji and let the caller say
     so, instead of silently presenting them as topic-relevant.
     """
-    rows = list(records)
+    rows = for_posts(records)
     matches = search_emojis(rows, topic, limit=limit)
     if matches:
         return matches, False

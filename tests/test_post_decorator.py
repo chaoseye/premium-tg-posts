@@ -157,6 +157,40 @@ class DecoratePostTests(unittest.TestCase):
         self.assertEqual(result.decorated_lines, 0)
         self.assertEqual(result.html, "Запуск нового тарифа")
 
+    def test_pack_advertisement_is_never_placed(self) -> None:
+        # Regression: the line "Ссылка на оплату в закрепе" was decorated with a
+        # card advertising someone else's emoji pack, because it does name links.
+        promo = {
+            "custom_emoji_id": "2000000000000000010",
+            "alt": "©️",
+            "labels": ["ссылки на паки"],
+            "tags": ["ссылка", "реклама", "паки"],
+            "promo": True,
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        result = decorate_post("Ссылка на оплату в закрепе", [], [promo])
+
+        self.assertEqual(result.decorated_lines, 0)
+        self.assertNotIn(promo["custom_emoji_id"], result.html)
+
+    def test_a_promo_card_does_not_consume_the_budget(self) -> None:
+        # It must be gone before ranking, not merely skipped when chosen -
+        # otherwise it still occupies a line's best slot.
+        promo = {
+            "custom_emoji_id": "2000000000000000011",
+            "alt": "©️",
+            "labels": ["запуск"],
+            "tags": ["запуск", "старт", "релиз"],
+            "promo": True,
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        result = decorate_post("Запуск нового тарифа", [], [promo, ROCKET])
+
+        self.assertEqual(result.decorated_lines, 1)
+        self.assertEqual(result.used[0].custom_emoji_id, ROCKET["custom_emoji_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
