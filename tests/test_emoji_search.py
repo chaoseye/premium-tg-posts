@@ -302,6 +302,32 @@ class StopWordTests(unittest.TestCase):
         self.assertNotIn(starry["custom_emoji_id"], [m.custom_emoji_id for m in matches])
 
 
+class NegatedTagTests(unittest.TestCase):
+    """A tag must not lose its "не" and start meaning the opposite."""
+
+    SHRUG = {
+        "custom_emoji_id": "9100000000000000001",
+        "alt": "🤷",
+        "labels": ["разводит руками"],
+        "tags": ["недоумение", "безразличие"],
+        "last_seen_at": "2026-08-15T10:00:00+00:00",
+    }
+
+    def test_a_negation_written_as_two_words_would_invert(self) -> None:
+        # Why the tags were rewritten: "не" is a stop word, so a tag spelled
+        # "не знаю" is indistinguishable from "знаю" and answered "знаю, знаю"
+        # with a shrug - at the highest score in that post.
+        self.assertEqual(tokenize("не знаю"), ["знаю"])
+        self.assertEqual(tokenize("без эмоций"), ["эмоций"])
+
+    def test_the_rewritten_tag_no_longer_answers_its_opposite(self) -> None:
+        self.assertEqual(search_emojis([self.SHRUG], "Выкатили в пятницу, знаю, знаю"), [])
+
+    def test_the_rewritten_tag_still_answers_its_own_meaning(self) -> None:
+        self.assertTrue(search_emojis([self.SHRUG], "полное недоумение"))
+        self.assertTrue(search_emojis([self.SHRUG], "безразличие ко всему"))
+
+
 class NumeralTests(unittest.TestCase):
     """A number in a post counts something the picture is not about."""
 
