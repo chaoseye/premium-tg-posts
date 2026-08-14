@@ -26,7 +26,7 @@ from premium_tg_posts.services.telegram_content import (
     serializable_entities,
     split_title_and_body,
 )
-from premium_tg_posts.utils.text import html_code, relative_to, short_id, tg_emoji_html
+from premium_tg_posts.utils.text import emoji_fallback, html_code, relative_to, short_id, tg_emoji_html
 from premium_tg_posts.ui.keyboards import back_menu, drafts_menu, main_menu, profiles_menu
 
 router = Router(name="commands")
@@ -149,7 +149,7 @@ async def label_command(message: Message, command: CommandObject, library: Libra
         return
 
     emoji_id = record.get("custom_emoji_id", "")
-    alt = record.get("alt", "") or record.get("sticker_emoji", "") or "🎁"
+    alt = emoji_fallback(record)
     await message.answer(
         f"Подписал {tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code>: {escape(label)}",
         reply_markup=main_menu(),
@@ -235,3 +235,4 @@ async def send_draft_command(message: Message, command: CommandObject, bot: Bot,
 @router.message(Command("owner"))
 async def owner_command(message: Message, library: LibraryStorage) -> None:
     await message.answer(render_owner(library), reply_markup=back_menu(), disable_web_page_preview=True)
+

@@ -50,6 +50,16 @@ def html_code(value: str) -> str:
     return f"<code>{escape(value)}</code>"
 
 
+def emoji_fallback(record: dict, default: str = "🎁") -> str:
+    """The character readers see where custom emoji do not render.
+
+    Prefers `fallback`, chosen to match what the emoji actually shows, over the
+    sticker's own `alt`: pack authors attach whatever they like, so a picture
+    labeled "счастливая улыбка" arrived carrying 🚪.
+    """
+    return record.get("fallback") or record.get("alt") or record.get("sticker_emoji") or default
+
+
 def tg_emoji_html(emoji_id: str, fallback: str | None) -> str:
     safe_id = escape(emoji_id, quote=True)
     safe_fallback = escape(fallback or "🎁")

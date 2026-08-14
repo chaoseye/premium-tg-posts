@@ -8,6 +8,7 @@ from typing import Any
 
 from premium_tg_posts.services.emoji_search import EmojiMatch, search_emojis, suggest_for_topic
 from premium_tg_posts.utils.text import (
+    emoji_fallback,
     fenced_json,
     local_stamp,
     markdown_list,
@@ -440,7 +441,7 @@ class LibraryStorage:
         for item in rows:
             emoji_id = item.get("custom_emoji_id", "")
             labels = ", ".join(item.get("labels", [])) or "unlabeled"
-            alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+            alt = emoji_fallback(item, "emoji")
             asset_type = item.get("asset_type_label", "") or item.get("asset_type", "")
             asset = item.get("asset_path", "")
             preview = item.get("preview_path", "")
@@ -558,7 +559,7 @@ class LibraryStorage:
         for match in matches:
             item = match.record
             emoji_id = str(item.get("custom_emoji_id", ""))
-            alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+            alt = emoji_fallback(item, "emoji")
             labels = ", ".join(item.get("labels", [])) or "unlabeled"
             header.append(
                 "| "
@@ -615,7 +616,7 @@ class LibraryStorage:
         for item in emojis:
             emoji_id = item.get("custom_emoji_id", "")
             labels = ", ".join(item.get("labels", [])) or "unlabeled"
-            alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+            alt = emoji_fallback(item, "emoji")
             asset_type = item.get("asset_type_label", "") or item.get("asset_type", "")
             asset = item.get("asset_path", "")
             preview = item.get("preview_path", "")
@@ -861,3 +862,5 @@ class LibraryStorage:
 
 def _md_cell(value: str) -> str:
     return str(value).replace("|", "\\|").replace("\n", "<br>")
+
+

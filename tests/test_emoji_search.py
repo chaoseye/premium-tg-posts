@@ -13,6 +13,7 @@ from premium_tg_posts.services.emoji_search import (
     tokenize,
 )
 from premium_tg_posts.services.storage import LibraryStorage
+from premium_tg_posts.utils.text import emoji_fallback
 
 GIFT = {
     "custom_emoji_id": "1000000000000000001",
@@ -251,6 +252,21 @@ class DirectVersusRelatedTests(unittest.TestCase):
 
         direct = {named["custom_emoji_id"], seed["custom_emoji_id"]}
         self.assertTrue(set(ids[:2]) <= direct, f"related hit ranked into the top: {ids}")
+
+
+class FallbackCharacterTests(unittest.TestCase):
+    def test_prefers_the_chosen_fallback(self) -> None:
+        record = {"alt": "🚪", "fallback": "🙂", "sticker_emoji": "🚪"}
+        self.assertEqual(emoji_fallback(record), "🙂")
+
+    def test_falls_back_to_alt_then_sticker_then_default(self) -> None:
+        self.assertEqual(emoji_fallback({"alt": "🔥"}), "🔥")
+        self.assertEqual(emoji_fallback({"sticker_emoji": "🔥"}), "🔥")
+        self.assertEqual(emoji_fallback({}), "🎁")
+        self.assertEqual(emoji_fallback({}, "emoji"), "emoji")
+
+    def test_blank_fields_do_not_win(self) -> None:
+        self.assertEqual(emoji_fallback({"fallback": "", "alt": "🔥"}), "🔥")
 
 
 class StemLengthTests(unittest.TestCase):

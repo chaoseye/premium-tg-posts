@@ -7,7 +7,7 @@ from aiogram.types import MessageEntity
 from aiogram.utils.text_decorations import html_decoration
 
 from premium_tg_posts.services.emoji_search import EmojiMatch, build_index, search_emojis
-from premium_tg_posts.utils.text import tg_emoji_html
+from premium_tg_posts.utils.text import emoji_fallback, tg_emoji_html
 
 # Telegram's own sendMessage ceiling; decorating must not push a post past it.
 TELEGRAM_TEXT_LIMIT = 4096
@@ -124,8 +124,7 @@ def decorate_post(
         match = chosen.get(index)
         if match:
             item = match.record
-            alt = item.get("alt") or item.get("sticker_emoji") or "🎁"
-            line_html = f"{tg_emoji_html(match.custom_emoji_id, alt)} {line_html}"
+            line_html = f"{tg_emoji_html(match.custom_emoji_id, emoji_fallback(item))} {line_html}"
         html_lines.append(line_html)
         if line.strip():
             alternatives = tuple(m for m in ranked.get(index, []) if m is not match)[:ALTERNATIVES]
@@ -139,3 +138,4 @@ def decorate_post(
         used=used,
         over_limit=len(html) > TELEGRAM_TEXT_LIMIT,
     )
+

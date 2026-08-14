@@ -17,7 +17,7 @@ from premium_tg_posts.ui.keyboards import (
     main_menu,
     profiles_menu,
 )
-from premium_tg_posts.utils.text import short_id, tg_emoji_html
+from premium_tg_posts.utils.text import emoji_fallback, short_id, tg_emoji_html
 
 router = Router(name="callbacks")
 
@@ -315,7 +315,7 @@ async def show_emoji_label_picker(message: Message, library: LibraryStorage, use
     index %= len(rows)
     item = rows[index]
     emoji_id = item.get("custom_emoji_id", "")
-    alt = item.get("alt", "") or item.get("sticker_emoji", "") or "🎁"
+    alt = emoji_fallback(item)
     labels = ", ".join(item.get("labels", [])) or "пока без названия"
     library.set_user_mode(user_id, "label_last", {"emoji_id": emoji_id, "index": index})
 
@@ -346,7 +346,7 @@ def render_emojis(library: LibraryStorage) -> str:
     ]
     for item in rows[:15]:
         emoji_id = item.get("custom_emoji_id", "")
-        alt = item.get("alt", "") or item.get("sticker_emoji", "") or "emoji"
+        alt = emoji_fallback(item, "emoji")
         labels = ", ".join(item.get("labels", [])) or "unlabeled"
         asset_type = item.get("asset_type_label", "") or item.get("asset_type", "asset")
         lines.append(f"{tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(asset_type)} - {escape(labels)}")
@@ -386,7 +386,7 @@ def render_emoji_search(library: LibraryStorage, query: str) -> str:
     for match in shown:
         item = match.record
         emoji_id = str(item.get("custom_emoji_id", ""))
-        alt = item.get("alt", "") or item.get("sticker_emoji", "") or "🎁"
+        alt = emoji_fallback(item)
         labels = ", ".join(item.get("labels", [])) or "без названия"
         lines.append(f"{tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(labels)}")
         lines.append(f"<code>{escape(tg_emoji_html(emoji_id, alt))}</code>")
@@ -407,7 +407,7 @@ def render_decoration_report(library: LibraryStorage, result, draft_path: str) -
             continue
         match = suggestion.chosen
         item = match.record
-        alt = item.get("alt") or item.get("sticker_emoji") or "🎁"
+        alt = emoji_fallback(item)
         labels = ", ".join(item.get("labels", [])) or "без названия"
         preview = suggestion.text.strip()[:38]
         lines.append(
@@ -417,10 +417,7 @@ def render_decoration_report(library: LibraryStorage, result, draft_path: str) -
         lines.append(f"  <i>{escape(preview)}…</i>" if len(suggestion.text.strip()) > 38 else f"  <i>{escape(preview)}</i>")
         if suggestion.alternatives:
             swaps = " ".join(
-                tg_emoji_html(
-                    alternative.custom_emoji_id,
-                    alternative.record.get("alt") or alternative.record.get("sticker_emoji") or "🎁",
-                )
+                tg_emoji_html(alternative.custom_emoji_id, emoji_fallback(alternative.record))
                 for alternative in suggestion.alternatives
             )
             lines.append(f"  замены: {swaps}")
@@ -487,3 +484,4 @@ def render_owner(library: LibraryStorage) -> str:
             f"name: {escape(owner.get('full_name') or '')}",
         ]
     )
+

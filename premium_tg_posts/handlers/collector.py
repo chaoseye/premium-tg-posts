@@ -25,7 +25,7 @@ from premium_tg_posts.services.telegram_content import (
     sticker_set_names,
 )
 from premium_tg_posts.ui.keyboards import after_collect_menu, main_menu
-from premium_tg_posts.utils.text import short_id, tg_emoji_html
+from premium_tg_posts.utils.text import emoji_fallback, short_id, tg_emoji_html
 
 router = Router(name="collector")
 MAX_STICKER_SET_LINKS = 5
@@ -149,7 +149,7 @@ async def collect_message(message: Message, bot: Bot, library: LibraryStorage) -
                     f"Профиль: <b>{escape(library.active_profile_name())}</b>",
                     f"Сохранил premium emoji: {len(emoji_rows)}",
                     *[
-                        f"{tg_emoji_html(row['custom_emoji_id'], row.get('alt', '') or row.get('sticker_emoji', '') or '🎁')} <code>{short_id(row['custom_emoji_id'])}</code> - {escape(row.get('asset_type_label') or row.get('asset_type') or 'asset saved')}"
+                        f"{tg_emoji_html(row['custom_emoji_id'], emoji_fallback(row))} <code>{short_id(row['custom_emoji_id'])}</code> - {escape(row.get('asset_type_label') or row.get('asset_type') or 'asset saved')}"
                         for row in emoji_rows[:20]
                     ],
                     "",
@@ -217,7 +217,7 @@ async def handle_user_mode(
             await message.answer("Пока нечего называть: сначала отправь premium emoji.", reply_markup=main_menu())
             return True
         emoji_id = record.get("custom_emoji_id", "")
-        alt = record.get("alt", "") or record.get("sticker_emoji", "") or "🎁"
+        alt = emoji_fallback(record)
         await message.answer(
             f"Добавил название: {tg_emoji_html(emoji_id, alt)} <code>{short_id(emoji_id)}</code> - {escape(label)}",
             reply_markup=main_menu(),
@@ -377,3 +377,5 @@ def dedupe_emoji_rows(rows: list[dict]) -> list[dict]:
         seen.add(emoji_id)
         result.append(row)
     return result
+
+
