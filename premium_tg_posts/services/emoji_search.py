@@ -33,6 +33,17 @@ NUMERAL_WORDS = frozenset(
     """.split()
 )
 
+# Words that describe a pose in the library and something else entirely in a
+# post. Forty-three labels read "стоит ...", and every one of them keeps its
+# meaning in its tags - "стоит в форме" is [школа, форма], "стоит спокойно" is
+# [жду, спокойно]. A post saying "стоит" almost always means what a thing costs,
+# so "Он бесплатный и стоит на каждом компьютере" was decorated from "стоит в
+# форме", and "держите его прямо сейчас" from "стоит прямо".
+#
+# "Сидит" and "лежит" were checked and left alone: a post saying them usually
+# does mean the posture ("кот сидит на клавиатуре", "лежат на складе").
+POSE_WORDS = frozenset("стоит стою прямо ровно".split())
+
 # Function words carry no meaning but match exactly and outweigh real hits: a
 # label like "звёзды в глазах" would score its "в" against the "в" in any
 # sentence. Reactions that happen to be short ("ок", "да", "нет") stay in.
@@ -46,7 +57,7 @@ NUMERAL_WORDS = frozenset(
 # "Себя", "себе" and "собой" are deliberately absent: they carry the meaning of
 # the emoji that use them - "обнимает себя" answers "берегите себя" and "не
 # ругать себя", "доволен собой" answers exactly that.
-STOP_WORDS = NUMERAL_WORDS | frozenset(
+STOP_WORDS = NUMERAL_WORDS | POSE_WORDS | frozenset(
     """
     а бы в во вот все всё где да для до же за и из или к как ко когда ли меня мне мы на
     над не нет ни но о об от по под при про с со та так там те то тут ты у уже чем что

@@ -201,6 +201,46 @@ class StopWordTests(unittest.TestCase):
         self.assertEqual(tokenize("звёзды в глазах"), ["звёзды", "глазах"])
         self.assertEqual(tokenize("смешно до смерти"), ["смешно", "смерти"])
 
+    def test_a_pose_word_does_not_answer_a_price(self) -> None:
+        # Regression: "Он бесплатный и стоит на каждом компьютере" was decorated
+        # from the label "стоит в форме", and "держите его прямо сейчас" from
+        # "стоит прямо".
+        pose = {
+            "custom_emoji_id": "9300000000000000001",
+            "alt": "🧍",
+            "labels": ["стоит в форме"],
+            "tags": ["школа", "форма", "готова"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertEqual(search_emojis([pose], "Он бесплатный и стоит на каждом компьютере"), [])
+        self.assertEqual(search_emojis([pose], "держите его прямо сейчас"), [])
+        self.assertTrue(search_emojis([pose], "школьная форма"))
+
+    def test_posture_that_still_means_itself_is_kept(self) -> None:
+        # "Сидит" and "лежит" mean the posture in a post too, so they stay words.
+        cat = {
+            "custom_emoji_id": "9300000000000000002",
+            "alt": "🐈",
+            "labels": ["кот сидит"],
+            "tags": ["кот", "жду", "мем"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertTrue(search_emojis([cat], "кот сидит на клавиатуре"))
+
+    def test_live_broadcast_survives(self) -> None:
+        # "Прямо" is a stop word but "прямой" is not - "прямой эфир" is a concept.
+        live = {
+            "custom_emoji_id": "9300000000000000003",
+            "alt": "🔴",
+            "labels": ["надпись live"],
+            "tags": ["эфир", "прямой эфир", "трансляция"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertTrue(search_emojis([live], "сегодня прямой эфир"))
+
     def test_a_multi_word_tag_does_not_leak_its_preposition(self) -> None:
         # Regression: the tag "после тренировки" put "после" in the vocabulary,
         # and "Счёт выставят после подписания" was decorated from it.
