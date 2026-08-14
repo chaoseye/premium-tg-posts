@@ -201,6 +201,38 @@ class StopWordTests(unittest.TestCase):
         self.assertEqual(tokenize("звёзды в глазах"), ["звёзды", "глазах"])
         self.assertEqual(tokenize("смешно до смерти"), ["смешно", "смерти"])
 
+    def test_a_multi_word_tag_does_not_leak_its_preposition(self) -> None:
+        # Regression: the tag "после тренировки" put "после" in the vocabulary,
+        # and "Счёт выставят после подписания" was decorated from it.
+        gym = {
+            "custom_emoji_id": "9400000000000000001",
+            "alt": "🏃",
+            "labels": ["качок с полотенцем"],
+            "tags": ["после тренировки", "устал"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertEqual(search_emojis([gym], "Счёт выставят после подписания"), [])
+        self.assertTrue(search_emojis([gym], "устал после тренировки"))
+
+    def test_possessive_forms_are_all_covered(self) -> None:
+        # "твой" was a stop word but "твоя" was not, so the tag "твоя проблема"
+        # answered any sentence containing it.
+        self.assertEqual(tokenize("твоя проблема"), ["проблема"])
+        self.assertEqual(tokenize("моя наша ваша твои мои"), [])
+
+    def test_self_reference_still_carries_meaning(self) -> None:
+        # Not every function-looking word is empty: these are what the emoji mean.
+        hug = {
+            "custom_emoji_id": "9400000000000000002",
+            "alt": "🤗",
+            "labels": ["обнимает себя"],
+            "tags": ["уют", "тепло", "самоподдержка"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertTrue(search_emojis([hug], "Берегите себя"))
+
     def test_meaningful_short_words_survive(self) -> None:
         self.assertIn("ок", tokenize("ок"))
         self.assertIn("нло", tokenize("нло"))

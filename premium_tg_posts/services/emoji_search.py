@@ -36,6 +36,16 @@ NUMERAL_WORDS = frozenset(
 # Function words carry no meaning but match exactly and outweigh real hits: a
 # label like "звёзды в глазах" would score its "в" against the "в" in any
 # sentence. Reactions that happen to be short ("ок", "да", "нет") stay in.
+#
+# The list was incidental and had gaps: "твой" was in it but "твоя" was not, "до"
+# and "от" were but "после" was not, so a tag written as two words leaked its
+# preposition into the vocabulary and "Счёт выставят после подписания" was
+# decorated from "после тренировки". Every word added below was first checked
+# against the library and appears in no label or tag except those leaks.
+#
+# "Себя", "себе" and "собой" are deliberately absent: they carry the meaning of
+# the emoji that use them - "обнимает себя" answers "берегите себя" and "не
+# ругать себя", "доволен собой" answers exactly that.
 STOP_WORDS = NUMERAL_WORDS | frozenset(
     """
     а бы в во вот все всё где да для до же за и из или к как ко когда ли меня мне мы на
@@ -43,6 +53,10 @@ STOP_WORDS = NUMERAL_WORDS | frozenset(
     чтобы эта эти это этот я он она оно они вы его её ее их наш ваш мой твой был была
     было были быть есть очень еще ещё только если тоже там сюда туда
     без почти каждый свой вам нам нас них тебя ним потом снова опять
+    после перед через между около против кроме вместо среди ради возле мимо
+    моя моё мои твоя твоё твои наша наше наши ваша ваше ваши сам сама само сами
+    здесь сейчас теперь тогда иначе зато однако лишь разве неужели
+    кто кого кому чей какая какой какое какие
     a an and as at be but by for from has have if in into is it its of on or that the
     their then there these this to too was were will with you your
     """.split()
