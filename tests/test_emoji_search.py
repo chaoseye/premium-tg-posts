@@ -306,6 +306,43 @@ class StemLengthTests(unittest.TestCase):
         self.assertTrue(search_emojis([record], "подписаться"))
 
 
+class PrefixLengthTests(unittest.TestCase):
+    """A tag may only prefix-match a word of comparable length."""
+
+    def test_short_tag_does_not_latch_onto_a_longer_word(self) -> None:
+        # Regression: the rule checked the query's length but not the tag's, so
+        # a post about "адрес" was decorated from a tag "ад", and "полная
+        # занятость" from "пол".
+        self.assertEqual(token_similarity("адрес", "ад"), 0.0)
+        self.assertEqual(token_similarity("полная", "пол"), 0.0)
+        self.assertEqual(token_similarity("потерять", "пот"), 0.0)
+
+    def test_stray_pack_letter_matches_nothing(self) -> None:
+        # Pack names leave single letters in the vocabulary ("f", "2"). Unguarded
+        # they matched every word starting with them.
+        self.assertEqual(token_similarity("frogemoji", "f"), 0.0)
+        self.assertEqual(token_similarity("2024", "2"), 0.0)
+
+    def test_real_extensions_still_match(self) -> None:
+        for query, field in (("чаты", "чат"), ("кот", "котик"), ("мемы", "мем")):
+            with self.subTest(query=query):
+                self.assertGreater(token_similarity(query, field), 0.0)
+
+    def test_guard_applies_in_both_directions(self) -> None:
+        self.assertEqual(token_similarity("ад", "адрес"), token_similarity("адрес", "ад"))
+
+    def test_one_letter_tag_cannot_pull_an_emoji_into_the_results(self) -> None:
+        stray = {
+            "custom_emoji_id": "9500000000000000001",
+            "alt": "🙃",
+            "labels": [],
+            "tags": ["f"],
+            "sticker_set_name": "f",
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+        self.assertEqual(search_emojis([stray], "frogemoji"), [])
+
+
 class FieldCorroborationTests(unittest.TestCase):
     def test_word_in_both_label_and_tags_outranks_one_field(self) -> None:
         both = {

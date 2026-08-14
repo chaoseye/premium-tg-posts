@@ -27,7 +27,8 @@ STOP_WORDS = frozenset(
 IGNORED_SYMBOLS = frozenset({"\ufe0f", "\ufe0e", "\u200d"})
 
 # Shortest query token allowed to match by prefix. Below this, prefixes are too
-# ambiguous to be useful.
+# ambiguous to be useful. The tag side is guarded by STEM_RATIO instead, since
+# what matters there is not the tag's length but how much of the query it covers.
 MIN_PREFIX = 3
 MIN_SUBSTRING = 4
 
@@ -124,17 +125,25 @@ def token_similarity(query_token: str, field_token: str) -> float:
     if query_token == field_token:
         return EXACT
 
-    if len(query_token) >= MIN_PREFIX and (field_token.startswith(query_token) or query_token.startswith(field_token)):
+    shared = _common_prefix_len(query_token, field_token)
+    shorter, longer = sorted((len(query_token), len(field_token)))
+
+    # One token extends the other: "чаты" over "чат". Containment alone is not
+    # enough - the shorter token also has to account for most of the longer one,
+    # or a short tag latches onto anything that starts with it. Measured on the
+    # real library, the unguarded rule matched "ад" against "адрес", "пол"
+    # against "полная", and the stray pack-name letter "f" against every English
+    # word in a post.
+    if len(query_token) >= MIN_PREFIX and shared == shorter and shorter >= STEM_RATIO * longer:
         return PREFIX
 
-    # Russian inflection often mutates the stem, so one token is not a prefix of
-    # the other: "подарок" vs "подарков" diverge at the fleeting vowel. Comparing
+    # Russian inflection often mutates the stem, so neither token contains the
+    # other: "подарок" vs "подарков" diverge at the fleeting vowel. Comparing
     # the shared prefix against the longer token catches those while keeping
     # unrelated words apart ("подарок" vs "подача" shares only 4 of 7).
-    shared = _common_prefix_len(query_token, field_token)
     if shared >= STEM_ABSOLUTE:
         return PREFIX
-    if shared >= STEM_MIN and shared >= STEM_RATIO * max(len(query_token), len(field_token)):
+    if shared >= STEM_MIN and shared >= STEM_RATIO * longer:
         return PREFIX
 
     if len(query_token) >= MIN_SUBSTRING and query_token in field_token:
@@ -219,10 +228,14 @@ class EmojiIndex:
                 found |= self.windows.get(token[:WINDOW], set())
             else:
                 found |= self.short.get(token, set())
-            # A short field token can still prefix-match a longer query.
-            for short_token, positions in self.short.items():
-                if token.startswith(short_token) or short_token.startswith(token):
-                    found |= positions
+            # Field tokens below a window are absent from `windows`, so they are
+            # scanned separately. The prefix rule caps how far apart in length a
+            # matching pair may be, and past that bound no short token can reach
+            # this query - "ок" can still be found by "оке", never by "окажется".
+            if len(token) * STEM_RATIO <= WINDOW - 1:
+                for short_token, positions in self.short.items():
+                    if token.startswith(short_token) or short_token.startswith(token):
+                        found |= positions
         return sorted(found)
 
 
