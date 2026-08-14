@@ -33,6 +33,28 @@ CLOCK = {
 }
 LIBRARY = [ROCKET, FIRE, CLOCK]
 
+# Scores are IDF-weighted, and IDF sits at its floor until a library has tens of
+# records, so a three-emoji fixture scores a perfect tag hit at 1.5 - under the
+# shipped threshold. These tests are about placement, formatting and budget, so
+# they pass a threshold that lets a match through and leave calibration to
+# ThresholdTests below.
+MECHANICS_SCORE = 0.5
+
+
+def padded_library(records: list[dict], size: int = 60) -> list[dict]:
+    """The same records in a library big enough for IDF to mean something."""
+    filler = [
+        {
+            "custom_emoji_id": f"210000000000000{index:04d}",
+            "alt": "🔸",
+            "labels": ["ромб"],
+            "tags": ["фигура"],
+            "last_seen_at": "2026-08-13T09:00:00+00:00",
+        }
+        for index in range(size - len(records))
+    ]
+    return [*records, *filler]
+
 
 class SplitLinesTests(unittest.TestCase):
     def test_entity_spanning_lines_is_clipped_to_each(self) -> None:
@@ -66,7 +88,7 @@ class SplitLinesTests(unittest.TestCase):
 
 class DecoratePostTests(unittest.TestCase):
     def test_inserts_emoji_matching_each_line(self) -> None:
-        result = decorate_post("Запуск нового тарифа\nСкидка 50 процентов", [], LIBRARY)
+        result = decorate_post("Запуск нового тарифа\nСкидка 50 процентов", [], LIBRARY, min_score=MECHANICS_SCORE)
 
         first, second = result.html.split("\n")
         self.assertIn(f'emoji-id="{ROCKET["custom_emoji_id"]}"', first)
@@ -77,7 +99,7 @@ class DecoratePostTests(unittest.TestCase):
         text = "Запуск нового тарифа"
         bold = MessageEntity(type="bold", offset=0, length=6)
 
-        result = decorate_post(text, [bold], LIBRARY)
+        result = decorate_post(text, [bold], LIBRARY, min_score=MECHANICS_SCORE)
 
         self.assertIn("<b>Запуск</b>", result.html)
         self.assertIn("<tg-emoji", result.html)
@@ -86,7 +108,7 @@ class DecoratePostTests(unittest.TestCase):
         text = "Запуск тарифа тут"
         link = MessageEntity(type="text_link", offset=14, length=3, url="https://example.com")
 
-        result = decorate_post(text, [link], LIBRARY)
+        result = decorate_post(text, [link], LIBRARY, min_score=MECHANICS_SCORE)
 
         self.assertIn('<a href="https://example.com">тут</a>', result.html)
 
@@ -110,7 +132,7 @@ class DecoratePostTests(unittest.TestCase):
         self.assertEqual(result.html.split("\n")[1], "")
 
     def test_never_repeats_the_same_emoji(self) -> None:
-        result = decorate_post("Запуск тарифа\nЗапуск второго тарифа", [], LIBRARY)
+        result = decorate_post("Запуск тарифа\nЗапуск второго тарифа", [], LIBRARY, min_score=MECHANICS_SCORE)
 
         used = [match.custom_emoji_id for match in result.used]
         self.assertEqual(len(used), len(set(used)))
@@ -118,9 +140,54 @@ class DecoratePostTests(unittest.TestCase):
     def test_respects_the_emoji_budget(self) -> None:
         text = "\n".join(["Запуск тарифа", "Скидка сегодня", "Срочно дедлайн"])
 
-        result = decorate_post(text, [], LIBRARY, max_emoji=1)
+        result = decorate_post(text, [], LIBRARY, max_emoji=1, min_score=MECHANICS_SCORE)
 
         self.assertEqual(result.decorated_lines, 1)
+
+    def test_shipped_threshold_rejects_a_loose_label_hit(self) -> None:
+        # "канале" against the label "канате" is the shape the threshold exists
+        # for: a real prefix match on a visual description, meaning nothing.
+        rope = padded_library([{
+            "custom_emoji_id": "2000000000000000020",
+            "alt": "🐈",
+            "labels": ["кот на канате"],
+            "tags": ["кот", "баланс", "мем"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }])
+
+        result = decorate_post("Что вам интереснее на канале", [], rope)
+
+        self.assertEqual(result.decorated_lines, 0)
+
+    def test_shipped_threshold_keeps_a_tag_hit(self) -> None:
+        gift = padded_library([{
+            "custom_emoji_id": "2000000000000000021",
+            "alt": "🎁",
+            "labels": ["коробка с бантом"],
+            "tags": ["подарок", "розыгрыш", "сюрприз"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }])
+
+        result = decorate_post("Разыгрываем подарок среди подписчиков", [], gift)
+
+        self.assertEqual(result.decorated_lines, 1)
+
+    def test_threshold_is_calibrated_for_a_grown_library(self) -> None:
+        # Documented consequence, not an accident: scores are IDF-weighted and
+        # IDF sits at its floor until a library has tens of records, so the same
+        # emoji and the same line decorate in a grown library and not in a tiny
+        # one. A freshly started profile decorates little until it fills up.
+        line = "Разыгрываем подарок среди подписчиков"
+        gift = {
+            "custom_emoji_id": "2000000000000000022",
+            "alt": "🎁",
+            "labels": ["коробка с бантом"],
+            "tags": ["подарок", "розыгрыш", "сюрприз"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertEqual(decorate_post(line, [], [gift]).decorated_lines, 0)
+        self.assertEqual(decorate_post(line, [], padded_library([gift])).decorated_lines, 1)
 
     def test_weak_matches_are_not_used(self) -> None:
         weak = [{
@@ -137,7 +204,7 @@ class DecoratePostTests(unittest.TestCase):
         self.assertEqual(result.decorated_lines, 0)
 
     def test_reports_alternatives_per_line(self) -> None:
-        result = decorate_post("Запуск нового тарифа", [], LIBRARY)
+        result = decorate_post("Запуск нового тарифа", [], LIBRARY, min_score=MECHANICS_SCORE)
 
         chosen = [s for s in result.suggestions if s.chosen]
         self.assertTrue(chosen)
@@ -146,7 +213,7 @@ class DecoratePostTests(unittest.TestCase):
     def test_flags_posts_over_the_telegram_limit(self) -> None:
         long_line = "Запуск тарифа " * 400
 
-        result = decorate_post(long_line, [], LIBRARY)
+        result = decorate_post(long_line, [], LIBRARY, min_score=MECHANICS_SCORE)
 
         self.assertGreater(len(result.html), TELEGRAM_TEXT_LIMIT)
         self.assertTrue(result.over_limit)
@@ -169,7 +236,7 @@ class DecoratePostTests(unittest.TestCase):
             "last_seen_at": "2026-08-14T10:00:00+00:00",
         }
 
-        result = decorate_post("Ссылка на оплату в закрепе", [], [promo])
+        result = decorate_post("Ссылка на оплату в закрепе", [], [promo], min_score=MECHANICS_SCORE)
 
         self.assertEqual(result.decorated_lines, 0)
         self.assertNotIn(promo["custom_emoji_id"], result.html)
@@ -186,7 +253,7 @@ class DecoratePostTests(unittest.TestCase):
             "last_seen_at": "2026-08-14T10:00:00+00:00",
         }
 
-        result = decorate_post("Запуск нового тарифа", [], [promo, ROCKET])
+        result = decorate_post("Запуск нового тарифа", [], [promo, ROCKET], min_score=MECHANICS_SCORE)
 
         self.assertEqual(result.decorated_lines, 1)
         self.assertEqual(result.used[0].custom_emoji_id, ROCKET["custom_emoji_id"])

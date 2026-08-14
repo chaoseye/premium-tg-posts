@@ -15,7 +15,13 @@ TELEGRAM_TEXT_LIMIT = 4096
 MAX_EMOJI_DEFAULT = 5
 # Below this a line has only a weak, mostly accidental match. Leaving the line
 # bare beats decorating it with something unrelated.
-MIN_LINE_SCORE = 1.0
+#
+# Measured over fourteen sample posts, 67 lines: raising this from 1.0 to 2.5
+# leaves 20 lines bare. Thirteen of them were wrong ("канале" -> "кот на
+# канате", "спорят" -> "мишень спорт"), six were right ("Приносим извинения" ->
+# сложенные ладони), one was arguable. A net gain, but not a free one - the
+# score alone does not separate the two, so the cost is real.
+MIN_LINE_SCORE = 2.5
 ALTERNATIVES = 3
 
 
@@ -85,6 +91,7 @@ def decorate_post(
     entities: Sequence[MessageEntity] | None,
     records: Iterable[dict[str, Any]],
     max_emoji: int = MAX_EMOJI_DEFAULT,
+    min_score: float = MIN_LINE_SCORE,
 ) -> DecoratedPost:
     lines = split_lines_with_entities(text, entities)
     # One search per line, so tokenise the library once instead of per line.
@@ -112,7 +119,7 @@ def decorate_post(
         if len(chosen) >= max_emoji:
             break
         for match in ranked[index]:
-            if match.score < MIN_LINE_SCORE:
+            if match.score < min_score:
                 break
             if match.custom_emoji_id in used_ids:
                 continue
