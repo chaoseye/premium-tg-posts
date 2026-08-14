@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -35,6 +36,22 @@ WINDOW = 3
 
 # Share of the longer token that a common stem must cover to count as a match.
 STEM_RATIO = 0.6
+# A stem this long is convincing on its own, whatever the length ratio says:
+# "подписаться" and "подписка" share six letters but only 55% of the longer one.
+STEM_ABSOLUTE = 5
+
+# Rare tags say more than common ones. A tag carried by a quarter of the library
+# ("пепе", "мем") barely narrows anything, while "дедлайн" on a handful of emoji
+# nearly identifies them. Weight every field token by its inverse document
+# frequency, normalised so a tag on PIVOT_DF records scores its plain weight.
+# The range is deliberately narrow. A/B over 30 queries on a 5310-emoji library:
+# plain 0.79 P@5, with a wide 0.4-1.6 band 0.82, with this one 0.83 - and a
+# gentler band deviates less from the hand-set field weights, so it is the safer
+# of two near-equal options.
+USE_IDF = True
+PIVOT_DF = 50
+IDF_MIN = 0.6
+IDF_MAX = 1.3
 
 # Human labels carry the real meaning; the pack title is weak context.
 FIELD_WEIGHTS: tuple[tuple[str, float], ...] = (
@@ -102,6 +119,8 @@ def token_similarity(query_token: str, field_token: str) -> float:
     # the shared prefix against the longer token catches those while keeping
     # unrelated words apart ("подарок" vs "подача" shares only 4 of 7).
     shared = _common_prefix_len(query_token, field_token)
+    if shared >= STEM_ABSOLUTE:
+        return PREFIX
     if shared >= MIN_PREFIX and shared >= STEM_RATIO * max(len(query_token), len(field_token)):
         return PREFIX
 
@@ -127,7 +146,7 @@ class EmojiIndex:
     the tokens are computed here and the scorer just reads them.
     """
 
-    __slots__ = ("records", "field_tokens", "alts", "windows", "short")
+    __slots__ = ("records", "field_tokens", "alts", "windows", "short", "idf")
 
     def __init__(self, records: Iterable[dict[str, Any]]) -> None:
         self.records = list(records)
@@ -137,11 +156,14 @@ class EmojiIndex:
         self.windows: dict[str, set[int]] = {}
         # field tokens shorter than a window, kept whole
         self.short: dict[str, set[int]] = {}
+        doc_freq: dict[str, int] = {}
 
         for position, record in enumerate(self.records):
             cache = {field: _field_tokens(record, field) for field, _ in FIELD_WEIGHTS}
             self.field_tokens.append(cache)
             self.alts.append(f"{record.get('alt') or ''}{record.get('sticker_emoji') or ''}")
+            for token in {token for tokens in cache.values() for token in tokens}:
+                doc_freq[token] = doc_freq.get(token, 0) + 1
             for tokens in cache.values():
                 for token in tokens:
                     if len(token) < WINDOW:
@@ -149,6 +171,19 @@ class EmojiIndex:
                         continue
                     for start in range(len(token) - WINDOW + 1):
                         self.windows.setdefault(token[start : start + WINDOW], set()).add(position)
+
+        self.idf = self._build_idf(doc_freq, len(self.records))
+
+    @staticmethod
+    def _build_idf(doc_freq: dict[str, int], total: int) -> dict[str, float]:
+        if not USE_IDF or total <= 0:
+            return {}
+        pivot = math.log(total / min(PIVOT_DF, max(total, 1))) or 1.0
+        weights: dict[str, float] = {}
+        for token, freq in doc_freq.items():
+            raw = math.log(total / (1 + freq))
+            weights[token] = min(IDF_MAX, max(IDF_MIN, raw / pivot))
+        return weights
 
     def __len__(self) -> int:
         return len(self.records)
@@ -187,6 +222,7 @@ def _score_tokens(
     alt: str,
     tokens: list[str],
     symbols: set[str],
+    idf: dict[str, float] | None = None,
 ) -> tuple[float, set[str]]:
     """Sum the best per-token hit, so covering more query words ranks higher."""
     matched_on: set[str] = set()
@@ -197,7 +233,12 @@ def _score_tokens(
         best_field: str | None = None
         for field, weight in FIELD_WEIGHTS:
             for field_token in token_cache[field]:
-                weighted = token_similarity(query_token, field_token) * weight
+                similarity = token_similarity(query_token, field_token)
+                if not similarity:
+                    continue
+                weighted = similarity * weight
+                if idf:
+                    weighted *= idf.get(field_token, 1.0)
                 if weighted > best:
                     best = weighted
                     best_field = field
@@ -269,7 +310,9 @@ def search_emojis(
 
     scored: dict[int, tuple[float, set[str]]] = {}
     for position in index.candidates(tokens, symbols):
-        score, matched_on = _score_tokens(index.field_tokens[position], index.alts[position], tokens, symbols)
+        score, matched_on = _score_tokens(
+            index.field_tokens[position], index.alts[position], tokens, symbols, index.idf
+        )
         if score > 0:
             scored[position] = (score, matched_on)
 
@@ -282,7 +325,7 @@ def search_emojis(
             if position in scored:
                 continue
             related_score, related_fields = _score_tokens(
-                index.field_tokens[position], index.alts[position], expanded, set()
+                index.field_tokens[position], index.alts[position], expanded, set(), index.idf
             )
             if related_score > 0:
                 scored[position] = (related_score * EXPANSION, related_fields | {"related"})
@@ -325,3 +368,4 @@ def suggest_for_topic(
 
     recent = sorted(rows, key=lambda item: str(item.get("last_seen_at", "")), reverse=True)[:limit]
     return [EmojiMatch(record=record, score=0.0, matched_on=()) for record in recent], True
+

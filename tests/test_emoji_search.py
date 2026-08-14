@@ -253,6 +253,60 @@ class DirectVersusRelatedTests(unittest.TestCase):
         self.assertTrue(set(ids[:2]) <= direct, f"related hit ranked into the top: {ids}")
 
 
+class StemLengthTests(unittest.TestCase):
+    def test_long_shared_stem_matches_despite_length_ratio(self) -> None:
+        # "подписаться" and "подписка" share six letters, but only 55% of the
+        # longer one - the ratio rule alone rejected this and /find returned
+        # nothing for "подписаться".
+        self.assertGreater(token_similarity("подписаться", "подписка"), 0.0)
+
+    def test_short_shared_head_still_rejected(self) -> None:
+        self.assertEqual(token_similarity("подача", "подарок"), 0.0)
+
+    def test_subscribe_query_finds_the_emoji(self) -> None:
+        record = {
+            "custom_emoji_id": "7000000000000000001",
+            "alt": "📣",
+            "labels": ["призыв подписаться"],
+            "tags": ["подписка", "подпишись", "канал"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+        self.assertTrue(search_emojis([record], "подписаться"))
+
+
+class InverseDocumentFrequencyTests(unittest.TestCase):
+    def test_rare_tag_outranks_a_common_one(self) -> None:
+        # A tag on a quarter of the library barely narrows anything; one on a
+        # single emoji nearly identifies it. Equal similarity, unequal value.
+        common = [
+            {
+                "custom_emoji_id": f"800000000000000{index:04d}",
+                "alt": "🙂",
+                "labels": [],
+                "tags": ["общий"],
+                "last_seen_at": "2026-08-14T10:00:00+00:00",
+            }
+            for index in range(60)
+        ]
+        rare = {
+            "custom_emoji_id": "8000000000000009999",
+            "alt": "🎯",
+            "labels": [],
+            "tags": ["редкий"],
+            "last_seen_at": "2026-08-14T09:00:00+00:00",
+        }
+
+        matches = search_emojis([*common, rare], "общий редкий", expand=False)
+
+        self.assertEqual(matches[0].custom_emoji_id, rare["custom_emoji_id"])
+
+    def test_scores_stay_positive_and_finite(self) -> None:
+        matches = search_emojis(TAGGED, "запуск", expand=False)
+        for match in matches:
+            self.assertGreater(match.score, 0.0)
+            self.assertLess(match.score, 100.0)
+
+
 class CandidateFilterTests(unittest.TestCase):
     """The index narrows what gets scored; it must not narrow what matches."""
 
