@@ -142,6 +142,22 @@ def query_symbols(value: str | None) -> set[str]:
     }
 
 
+# Where two words part, an inflected ending begins with a vowel or a sign:
+# "улицу"/"улице", "двери"/"дверь", "вопросы"/"вопросом". Words that part on a
+# consonant have different stems: "минут"/"минус", "канале"/"канате",
+# "спорят"/"спорт".
+#
+# As a general rule this is false - "зелёный"/"зелёным" and "закрыл"/"закрыт"
+# part on consonants and are one word each - which is why it only ever relaxes
+# strict matching, never tightens loose matching. Those pairs are refused on a
+# label today and stay refused; nothing a label matches now stops matching.
+INFLECTION_ENDINGS = frozenset("аеёиоуыэюяьъй")
+
+
+def _endings_look_inflectional(left: str, right: str) -> bool:
+    return bool(left) and bool(right) and left[0] in INFLECTION_ENDINGS and right[0] in INFLECTION_ENDINGS
+
+
 def _common_prefix_len(left: str, right: str) -> int:
     limit = min(len(left), len(right))
     length = 0
@@ -172,7 +188,7 @@ def token_similarity(query_token: str, field_token: str, strict: bool = False) -
     if len(query_token) >= MIN_PREFIX and shared == shorter and shorter >= STEM_RATIO * longer:
         return PREFIX
 
-    if strict:
+    if strict and not _endings_look_inflectional(query_token[shared:], field_token[shared:]):
         return 0.0
 
     # Russian inflection often mutates the stem, so neither token contains the

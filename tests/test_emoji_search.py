@@ -433,10 +433,25 @@ class StrictLabelTests(unittest.TestCase):
         self.assertEqual(token_similarity("минут", "минус", strict=True), 0.0)
         self.assertEqual(token_similarity("канале", "канате", strict=True), 0.0)
 
-    def test_tags_stay_loose(self) -> None:
-        # The same pair still matches on a tag, where the words are chosen.
-        self.assertGreater(token_similarity("скидки", "скидка"), 0.0)
-        self.assertEqual(token_similarity("скидки", "скидка", strict=True), 0.0)
+    def test_labels_accept_an_inflected_ending(self) -> None:
+        # Where the words part on a vowel or a sign, they are two forms of one
+        # word and the label answers: a post saying "вышел на улицу" should
+        # reach the label "стоит на улице".
+        for query, field in (("улицу", "улице"), ("двери", "дверь"), ("вопросы", "вопросом"), ("скидки", "скидка")):
+            with self.subTest(query=query):
+                self.assertGreater(token_similarity(query, field, strict=True), 0.0)
+
+    def test_labels_refuse_a_consonant_split(self) -> None:
+        for query, field in (("минут", "минус"), ("канале", "канате"), ("спорят", "спорт"), ("заказ", "закат")):
+            with self.subTest(query=query):
+                self.assertEqual(token_similarity(query, field, strict=True), 0.0)
+
+    def test_the_ending_rule_only_ever_relaxes(self) -> None:
+        # It is not true in general - "зелёный"/"зелёным" part on consonants and
+        # are one word - so it may never decide a loose match. On a tag that pair
+        # still matches; on a label it stays refused, as it was before the rule.
+        self.assertGreater(token_similarity("зелёным", "зелёный"), 0.0)
+        self.assertEqual(token_similarity("зелёным", "зелёный", strict=True), 0.0)
 
     def test_a_refused_label_does_not_return_through_expansion(self) -> None:
         # Regression: closing the label in scoring alone let the record back in
