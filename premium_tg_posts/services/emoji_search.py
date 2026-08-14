@@ -18,11 +18,18 @@ TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 # deliberately absent - a post saying "сорок лет" or "тысяча подписчиков" does
 # mean that number, and "утка 40" should answer it. Digits are kept too, so
 # "2024" still finds the emoji of that year.
+# The collective forms count the same way - "Двое поругались, третий подлил
+# масла" was decorated from the label "двое в баре" - and so do the multiplying
+# adverbs. "Пара" is deliberately absent: it names a couple as often as it counts
+# ("пара приёмов" versus "влюблённая пара"), and ten emoji are tagged with it in
+# the second sense.
 NUMERAL_WORDS = frozenset(
     """
     один одна одно два две три четыре пять шесть семь восемь девять десять
     первый первое первая первых второй второе вторая третий третье третья
     четвёртый четвертый четвёртое четвертое пятый пятое
+    двое трое четверо пятеро шестеро семеро оба обе
+    вдвое втрое вчетверо
     """.split()
 )
 

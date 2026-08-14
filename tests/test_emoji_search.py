@@ -238,6 +238,17 @@ class NumeralTests(unittest.TestCase):
         self.assertEqual(tokenize("Отключить на два часа"), ["отключить", "часа"])
         self.assertEqual(tokenize("Первое — разборы проектов"), ["разборы", "проектов"])
 
+    def test_collective_numerals_are_dropped(self) -> None:
+        # Regression: "Двое поругались" was decorated from the label "двое в баре".
+        self.assertEqual(tokenize("Двое поругались, третий подлил масла"), ["поругались", "подлил", "масла"])
+        self.assertEqual(tokenize("Поднял обе руки"), ["поднял", "руки"])
+        self.assertEqual(tokenize("Выручка выросла вдвое"), ["выручка", "выросла"])
+
+    def test_a_couple_is_not_a_count(self) -> None:
+        # "Пара" names a couple as often as it counts, and the library uses it
+        # in that sense, so it stays a word.
+        self.assertIn("пара", tokenize("влюблённая пара на скамейке"))
+
     def test_larger_and_written_numbers_survive(self) -> None:
         # A post saying these does mean the number, and the library has emoji of
         # exactly them.
