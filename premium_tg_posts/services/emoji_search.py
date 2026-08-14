@@ -87,6 +87,16 @@ FIELD_WEIGHTS: tuple[tuple[str, float], ...] = (
     ("sticker_set_name", 0.5),
 )
 
+# A label says what the picture shows; a tag says what a post would call it.
+# Only the second is a vocabulary, so only the second is worth matching loosely.
+# Reading a label approximately is where the false friends came from: "минут"
+# found "минус", "канале" found "канате", "спорят" found "спорт", "следим" found
+# "след" - each a genuine four-letter stem on a word describing an image. Over
+# the eval set, refusing those costs nothing and hit@1 goes to 1.00; the loss is
+# that an inflected word no longer reaches a label, so "подарки" finds the emoji
+# through its tags rather than through the label "подарок".
+STRICT_FIELDS = frozenset({"labels"})
+
 EXACT = 1.0
 PREFIX = 0.6
 SUBSTRING = 0.35
@@ -140,7 +150,13 @@ def _common_prefix_len(left: str, right: str) -> int:
     return length
 
 
-def token_similarity(query_token: str, field_token: str) -> float:
+def token_similarity(query_token: str, field_token: str, strict: bool = False) -> float:
+    """How well a query word matches one word of a record.
+
+    `strict` allows only the same word or one extending the other, refusing the
+    looser stem and substring rules. See STRICT_FIELDS for why some fields ask
+    for it.
+    """
     if query_token == field_token:
         return EXACT
 
@@ -155,6 +171,9 @@ def token_similarity(query_token: str, field_token: str) -> float:
     # word in a post.
     if len(query_token) >= MIN_PREFIX and shared == shorter and shorter >= STEM_RATIO * longer:
         return PREFIX
+
+    if strict:
+        return 0.0
 
     # Russian inflection often mutates the stem, so neither token contains the
     # other: "подарок" vs "подарков" diverge at the fleeting vowel. Comparing
@@ -276,9 +295,10 @@ def _score_tokens(
     for query_token in tokens:
         per_field: list[tuple[float, str]] = []
         for field, weight in FIELD_WEIGHTS:
+            strict = field in STRICT_FIELDS
             best_here = 0.0
             for field_token in token_cache[field]:
-                similarity = token_similarity(query_token, field_token)
+                similarity = token_similarity(query_token, field_token, strict)
                 if not similarity:
                     continue
                 weighted = similarity * weight
@@ -334,8 +354,14 @@ def expand_tokens(
         tag_tokens = cache["tags"]
         if not tag_tokens and not cache["labels"]:
             continue
-        own_tokens = tag_tokens + cache["labels"]
-        if not any(token_similarity(token, own) > 0 for token in tokens for own in own_tokens):
+        # Same reading rules as scoring, or a label the scorer refuses to match
+        # loosely would still pull the record in through its sibling tags.
+        reached = any(
+            token_similarity(token, own) > 0 for token in tokens for own in tag_tokens
+        ) or any(
+            token_similarity(token, own, strict=True) > 0 for token in tokens for own in cache["labels"]
+        )
+        if not reached:
             continue
         for tag_token in tag_tokens:
             if tag_token in direct:

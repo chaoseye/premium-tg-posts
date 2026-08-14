@@ -74,10 +74,18 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(matches[0].custom_emoji_id, GIFT["custom_emoji_id"])
         self.assertIn("labels", matches[0].matched_on)
 
-    def test_finds_by_inflected_query(self) -> None:
-        matches = search_emojis(ALL, "розыгрыш подарков")
+    def test_finds_by_inflected_query_through_tags(self) -> None:
+        tagged = {**GIFT, "tags": ["подарок", "розыгрыш"]}
+        matches = search_emojis([tagged, FIRE, ZAP, BANG], "розыгрыш подарков")
         self.assertTrue(matches)
         self.assertEqual(matches[0].custom_emoji_id, GIFT["custom_emoji_id"])
+
+    def test_an_inflected_word_does_not_reach_a_label_on_its_own(self) -> None:
+        # The other half of the same contract: a label describes the picture, so
+        # it is read strictly. "подарков" reaches this emoji only once someone
+        # writes the tag; that is what tags are for.
+        self.assertEqual(search_emojis([GIFT], "розыгрыш подарков"), [])
+        self.assertTrue(search_emojis([GIFT], "подарок"))
 
     def test_label_outranks_pack_title(self) -> None:
         # "Gifts" is the pack title for both; only GIFT carries the label.
@@ -259,7 +267,7 @@ class NumeralTests(unittest.TestCase):
             "last_seen_at": "2026-08-14T10:00:00+00:00",
         }
 
-        self.assertTrue(search_emojis([hand], "пальцы вверх"))
+        self.assertTrue(search_emojis([hand], "пальца вверх"))
         self.assertTrue(search_emojis([hand], "жест рукой"))
 
     def test_loneliness_is_not_a_numeral(self) -> None:
@@ -397,6 +405,53 @@ class PrefixLengthTests(unittest.TestCase):
         self.assertEqual(search_emojis([stray], "frogemoji"), [])
 
 
+class StrictLabelTests(unittest.TestCase):
+    """A label says what the picture shows, so it is read word for word."""
+
+    MINUS = {
+        "custom_emoji_id": "9600000000000000001",
+        "alt": "➖",
+        "labels": ["иконка минус люди"],
+        "tags": ["убрать", "уход", "сокращение"],
+        "last_seen_at": "2026-08-14T10:00:00+00:00",
+    }
+
+    def test_a_diverging_stem_no_longer_matches_a_label(self) -> None:
+        # Regression: "минут" and "минус" share four letters of five, so a line
+        # reading "обнимают через минуту" scored 6.2 on a picture meaning
+        # "remove people" - the highest-scoring emoji in that whole post.
+        self.assertEqual(search_emojis([self.MINUS], "обнимают тебя через минуту"), [])
+        self.assertEqual(search_emojis([self.MINUS], "нужно десять минут"), [])
+
+    def test_the_label_still_answers_its_own_word(self) -> None:
+        self.assertTrue(search_emojis([self.MINUS], "поставил минус"))
+        self.assertTrue(search_emojis([self.MINUS], "убрать лишних"))
+
+    def test_labels_still_extend(self) -> None:
+        # Strict is not exact-only: one word may still extend the other.
+        self.assertGreater(token_similarity("чаты", "чат", strict=True), 0.0)
+        self.assertEqual(token_similarity("минут", "минус", strict=True), 0.0)
+        self.assertEqual(token_similarity("канале", "канате", strict=True), 0.0)
+
+    def test_tags_stay_loose(self) -> None:
+        # The same pair still matches on a tag, where the words are chosen.
+        self.assertGreater(token_similarity("скидки", "скидка"), 0.0)
+        self.assertEqual(token_similarity("скидки", "скидка", strict=True), 0.0)
+
+    def test_a_refused_label_does_not_return_through_expansion(self) -> None:
+        # Regression: closing the label in scoring alone let the record back in
+        # as a "related" hit, since the tag graph still read labels loosely.
+        rope = {
+            "custom_emoji_id": "9600000000000000002",
+            "alt": "🐈",
+            "labels": ["кот на канате"],
+            "tags": ["кот", "баланс", "мем"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+
+        self.assertEqual(search_emojis([rope], "что вам интереснее на канале"), [])
+
+
 class FieldCorroborationTests(unittest.TestCase):
     def test_word_in_both_label_and_tags_outranks_one_field(self) -> None:
         both = {
@@ -484,10 +539,12 @@ class CandidateFilterTests(unittest.TestCase):
         record = {
             "custom_emoji_id": "4000000000000000001",
             "alt": "🏷",
-            "labels": ["суперскидка"],
+            "labels": ["ценник"],
+            "tags": ["суперскидка"],
             "last_seen_at": "2026-08-13T10:00:00+00:00",
         }
         # "скидка" is inside "суперскидка" but shares no leading window with it.
+        # Kept on a tag, since labels are read strictly and refuse substrings.
         self.assertTrue(search_emojis([record], "скидка"))
 
     def test_short_field_token_matched_by_longer_query(self) -> None:
@@ -594,6 +651,8 @@ class PostRequestCandidateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             storage = self._storage(tmp)
             storage.update_emoji_label(GIFT["custom_emoji_id"], "подарок коробка")
+            # An inflected topic reaches the emoji through tags, not the label.
+            storage.upsert_emoji(GIFT["custom_emoji_id"], {"tags": ["подарок", "розыгрыш"]})
 
             text = storage.create_post_generation_request("розыгрыш подарков").read_text(encoding="utf-8")
 
