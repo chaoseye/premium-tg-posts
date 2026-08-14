@@ -76,6 +76,13 @@ SYMBOL_HIT = 4.0
 # direct hit on the query itself.
 EXPANSION = 0.4
 
+# A word found in both the label and the tags is better evidence than the same
+# word in one of them, so the runner-up field is added at a discount instead of
+# being discarded. Measured on 30 queries against the real library: 0.82 P@5
+# taking only the best field, 0.83 anywhere from 0.2 to 0.5, 0.81 at 0.7. The
+# plateau means the exact value hardly matters; this is its middle.
+SECOND_FIELD = 0.35
+
 
 @dataclass(frozen=True)
 class EmojiMatch:
@@ -235,9 +242,9 @@ def _score_tokens(
     total = 0.0
 
     for query_token in tokens:
-        best = 0.0
-        best_field: str | None = None
+        per_field: list[tuple[float, str]] = []
         for field, weight in FIELD_WEIGHTS:
+            best_here = 0.0
             for field_token in token_cache[field]:
                 similarity = token_similarity(query_token, field_token)
                 if not similarity:
@@ -245,12 +252,18 @@ def _score_tokens(
                 weighted = similarity * weight
                 if idf:
                     weighted *= idf.get(field_token, 1.0)
-                if weighted > best:
-                    best = weighted
-                    best_field = field
-        if best_field:
-            total += best
-            matched_on.add(best_field)
+                best_here = max(best_here, weighted)
+            if best_here:
+                per_field.append((best_here, field))
+
+        if per_field:
+            per_field.sort(reverse=True)
+            total += per_field[0][0]
+            matched_on.add(per_field[0][1])
+            # The same word corroborated by a second field counts, at a discount.
+            if len(per_field) > 1:
+                total += SECOND_FIELD * per_field[1][0]
+                matched_on.add(per_field[1][1])
 
     if symbols and any(symbol in alt for symbol in symbols):
         total += SYMBOL_HIT

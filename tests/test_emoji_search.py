@@ -290,6 +290,53 @@ class StemLengthTests(unittest.TestCase):
         self.assertTrue(search_emojis([record], "подписаться"))
 
 
+class FieldCorroborationTests(unittest.TestCase):
+    def test_word_in_both_label_and_tags_outranks_one_field(self) -> None:
+        both = {
+            "custom_emoji_id": "9000000000000000001",
+            "alt": "🔥",
+            "labels": ["огонь"],
+            "tags": ["огонь"],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+        label_only = {
+            "custom_emoji_id": "9000000000000000002",
+            "alt": "🔥",
+            "labels": ["огонь"],
+            "tags": ["прочее"],
+            "last_seen_at": "2026-08-14T11:00:00+00:00",
+        }
+
+        matches = search_emojis([label_only, both], "огонь", expand=False)
+
+        self.assertEqual(matches[0].custom_emoji_id, both["custom_emoji_id"])
+        self.assertGreater(matches[0].score, matches[1].score)
+
+    def test_second_field_only_supplements_never_replaces(self) -> None:
+        # The runner-up is a discount on top, so a strong single-field hit still
+        # beats a weak pair.
+        strong = {
+            "custom_emoji_id": "9000000000000000003",
+            "alt": "🎯",
+            "labels": ["дедлайн"],
+            "tags": [],
+            "last_seen_at": "2026-08-14T10:00:00+00:00",
+        }
+        weak_pair = {
+            "custom_emoji_id": "9000000000000000004",
+            "alt": "📅",
+            "labels": [],
+            "tags": [],
+            "sticker_set_title": "дедлайн",
+            "sticker_set_name": "дедлайн",
+            "last_seen_at": "2026-08-14T11:00:00+00:00",
+        }
+
+        matches = search_emojis([weak_pair, strong], "дедлайн", expand=False)
+
+        self.assertEqual(matches[0].custom_emoji_id, strong["custom_emoji_id"])
+
+
 class InverseDocumentFrequencyTests(unittest.TestCase):
     def test_rare_tag_outranks_a_common_one(self) -> None:
         # A tag on a quarter of the library barely narrows anything; one on a
