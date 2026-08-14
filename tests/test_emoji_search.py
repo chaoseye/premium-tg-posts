@@ -263,6 +263,22 @@ class StemLengthTests(unittest.TestCase):
     def test_short_shared_head_still_rejected(self) -> None:
         self.assertEqual(token_similarity("подача", "подарок"), 0.0)
 
+    def test_three_letter_stem_on_short_words_is_rejected(self) -> None:
+        # Regression: "месяц" passed the ratio rule against "месит" on three
+        # shared letters and a post about "этот месяц" was given "месит тесто".
+        self.assertEqual(token_similarity("месяц", "месит"), 0.0)
+
+    def test_real_inflections_still_match(self) -> None:
+        for query, field in (
+            ("подарков", "подарок"),
+            ("скидки", "скидка"),
+            ("работал", "работа"),
+            ("выгорел", "выгорание"),
+            ("огонь", "огонек"),
+        ):
+            with self.subTest(query=query):
+                self.assertGreater(token_similarity(query, field), 0.0)
+
     def test_subscribe_query_finds_the_emoji(self) -> None:
         record = {
             "custom_emoji_id": "7000000000000000001",

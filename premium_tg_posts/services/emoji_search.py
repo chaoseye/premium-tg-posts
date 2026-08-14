@@ -16,6 +16,7 @@ STOP_WORDS = frozenset(
     над не нет ни но о об от по под при про с со та так там те то тут ты у уже чем что
     чтобы эта эти это этот я он она оно они вы его её ее их наш ваш мой твой был была
     было были быть есть очень еще ещё только если тоже там сюда туда
+    без почти каждый свой вам нам нас них тебя ним потом снова опять
     a an and as at be but by for from has have if in into is it its of on or that the
     their then there these this to too was were will with you your
     """.split()
@@ -36,6 +37,11 @@ WINDOW = 3
 
 # Share of the longer token that a common stem must cover to count as a match.
 STEM_RATIO = 0.6
+# ...and the stem must be at least this long. Three letters passes the ratio on
+# two five-letter words, which matched "месяц" against "месит тесто" in a real
+# post. Four costs 0.007 P@5 on the eval set - one position in one query - and
+# removes the false pair, so it wins.
+STEM_MIN = 4
 # A stem this long is convincing on its own, whatever the length ratio says:
 # "подписаться" and "подписка" share six letters but only 55% of the longer one.
 STEM_ABSOLUTE = 5
@@ -121,7 +127,7 @@ def token_similarity(query_token: str, field_token: str) -> float:
     shared = _common_prefix_len(query_token, field_token)
     if shared >= STEM_ABSOLUTE:
         return PREFIX
-    if shared >= MIN_PREFIX and shared >= STEM_RATIO * max(len(query_token), len(field_token)):
+    if shared >= STEM_MIN and shared >= STEM_RATIO * max(len(query_token), len(field_token)):
         return PREFIX
 
     if len(query_token) >= MIN_SUBSTRING and query_token in field_token:
