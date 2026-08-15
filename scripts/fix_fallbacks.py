@@ -51,6 +51,13 @@ CHARACTER_WORDS = frozenset(
 )
 
 
+# Characters that embarrass a post when the custom emoji does not render. The
+# pack's own alt is often one of these for reasons that have nothing to do with
+# the picture: 🔫 sits on "стоит прямо", 🔞 on "пепе думает", 🍆 on "кот рыжий",
+# 🍑 on "пепе фото" - which appeared three times in one real business post.
+RISKY_FALLBACKS = frozenset("🍑🍆💦🖕🔞😈👅💋🩸🚬🍺🍷🔫💊🤮🤢")
+
+
 def vocabulary_index() -> EmojiIndex:
     """The standard-emoji vocabulary, shaped so the search scorer can rank it."""
     rows = []
@@ -66,6 +73,8 @@ def main() -> int:
     parser.add_argument("--show", type=int, default=25, help="how many proposals to print")
     parser.add_argument("--max-keep-score", type=float, default=MAX_KEEP_SCORE,
                         help="how badly the current character must fit before replacing it")
+    parser.add_argument("--risky-only", action="store_true",
+                        help="only touch emoji whose current character would embarrass a post")
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -81,13 +90,25 @@ def main() -> int:
         if not label:
             continue
 
+        current = record.get("fallback") or record.get("alt") or ""
+        if args.risky_only and current not in RISKY_FALLBACKS:
+            kept += 1
+            continue
+
         # What is happening, without who is doing it.
         action = " ".join(w for w in tokenize(label) if w not in CHARACTER_WORDS)
+        if not action:
+            # Some labels are nothing but who and how - "пепе фото", "котик мем".
+            # Stripping leaves nothing to search, and the record kept whatever
+            # the pack attached. Fall back to the tags, then to the label as
+            # written: any of those beats a peach on a post about an AI agency.
+            action = " ".join(w for w in tokenize(" ".join(record.get("tags", []))) if w not in CHARACTER_WORDS)
+        if not action:
+            action = " ".join(tokenize(label))
         if not action:
             kept += 1
             continue
 
-        current = record.get("alt") or ""
         current_entry = lookup(current)
         if current_entry:
             # Does the character the pack chose already describe this picture?
