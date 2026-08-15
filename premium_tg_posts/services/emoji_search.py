@@ -468,9 +468,16 @@ def search_emojis(
     query: str,
     limit: int = 15,
     expand: bool = True,
+    match_symbols: bool = True,
 ) -> list[EmojiMatch]:
+    """Rank a library against a query.
+
+    `match_symbols` decides whether a pictograph in the query is a search term.
+    It is, when someone types `/find 🔥`. It is not, when the text is a post
+    being decorated - there the character is the author writing, not asking.
+    """
     tokens = tokenize(query)
-    symbols = query_symbols(query)
+    symbols = query_symbols(query) if match_symbols else set()
     if not tokens and not symbols:
         return []
 

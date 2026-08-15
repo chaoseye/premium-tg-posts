@@ -107,7 +107,12 @@ def decorate_post(
         # Respect what the author already put there.
         if _starts_with_pictograph(line) or _has_custom_emoji(line_entities):
             continue
-        matches = search_emojis(library, line, limit=ALTERNATIVES + 3)
+        # An emoji the author already typed is part of the sentence, not a
+        # search term. Left on, a symbol hit outscores every word - a line
+        # ending "Напишите цифру в комментариях 👇" was answered by an emoji
+        # whose alt happens to be 👇, a small green frog, which then also spent
+        # one of the post's five slots.
+        matches = search_emojis(library, line, limit=ALTERNATIVES + 3, match_symbols=False)
         if matches:
             ranked[index] = matches
 

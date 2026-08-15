@@ -4,6 +4,7 @@ import unittest
 
 from aiogram.types import MessageEntity
 
+from premium_tg_posts.services.emoji_search import search_emojis
 from premium_tg_posts.services.post_decorator import (
     TELEGRAM_TEXT_LIMIT,
     decorate_post,
@@ -223,6 +224,45 @@ class DecoratePostTests(unittest.TestCase):
 
         self.assertEqual(result.decorated_lines, 0)
         self.assertEqual(result.html, "Запуск нового тарифа")
+
+    def test_an_emoji_the_author_typed_is_not_a_search_term(self) -> None:
+        # Regression: on a real post, the line "Напишите цифру в комментариях 👇"
+        # was decorated from an emoji whose alt is 👇 - a small green frog - and
+        # a symbol hit outscores any word, so it also took one of five slots.
+        frog = {
+            "custom_emoji_id": "2000000000000000030",
+            "alt": "👇",
+            "labels": ["пепе маленький зелёный"],
+            "tags": ["пепе", "маленький", "мило"],
+            "last_seen_at": "2026-08-15T10:00:00+00:00",
+        }
+        surprise = {
+            "custom_emoji_id": "2000000000000000031",
+            "alt": "😮",
+            "labels": ["кот с большими глазами"],
+            "tags": ["удивление", "кот"],
+            "last_seen_at": "2026-08-15T09:00:00+00:00",
+        }
+        library = padded_library([frog, surprise])
+
+        result = decorate_post(
+            "Какой пункт удивил вас больше всего 👇", [], library, min_score=MECHANICS_SCORE
+        )
+
+        self.assertEqual(result.decorated_lines, 1)
+        self.assertEqual(result.used[0].custom_emoji_id, surprise["custom_emoji_id"])
+
+    def test_find_still_searches_by_symbol(self) -> None:
+        # The same character remains a query when someone asks for it directly.
+        frog = {
+            "custom_emoji_id": "2000000000000000032",
+            "alt": "👇",
+            "labels": ["пепе маленький зелёный"],
+            "tags": ["пепе"],
+            "last_seen_at": "2026-08-15T10:00:00+00:00",
+        }
+
+        self.assertTrue(search_emojis([frog], "👇"))
 
     def test_pack_advertisement_is_never_placed(self) -> None:
         # Regression: the line "Ссылка на оплату в закрепе" was decorated with a
