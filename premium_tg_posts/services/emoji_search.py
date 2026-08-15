@@ -178,12 +178,34 @@ class EmojiMatch:
         return str(self.record.get("custom_emoji_id", ""))
 
 
+# Particles that flip the word they govern. They are stop words, so without this
+# the line "отказал клиенту и не умер" keeps "умер" and is decorated with a
+# picture meaning exactly that - at the highest score in its post. Dropping the
+# governed word instead leaves the line to its other words, or to nothing, and
+# silence beats the opposite of what was written.
+#
+# "Нет" is deliberately absent: a post writes it as an answer at least as often
+# as a negation - "Сказал нет спокойно, без объяснений" - where it would swallow
+# "спокойно" for no reason.
+NEGATIONS = frozenset({"не", "ни", "без"})
+
+
 def tokenize(value: str | None) -> list[str]:
-    return [
-        token
-        for token in (raw.lower() for raw in TOKEN_RE.findall(value or ""))
-        if token not in STOP_WORDS
-    ]
+    tokens: list[str] = []
+    negated = False
+    for token in (raw.lower() for raw in TOKEN_RE.findall(value or "")):
+        if token in NEGATIONS:
+            negated = True
+            continue
+        if token in STOP_WORDS:
+            continue
+        if negated:
+            # The particle governs the first real word after it, however many
+            # function words sit between them: "не очень хорошо" keeps neither.
+            negated = False
+            continue
+        tokens.append(token)
+    return tokens
 
 
 def query_symbols(value: str | None) -> set[str]:

@@ -302,6 +302,40 @@ class StopWordTests(unittest.TestCase):
         self.assertNotIn(starry["custom_emoji_id"], [m.custom_emoji_id for m in matches])
 
 
+class NegationTests(unittest.TestCase):
+    """A negated word must not answer as if it were affirmed."""
+
+    DEAD = {
+        "custom_emoji_id": "9000000000000000101",
+        "alt": "💀",
+        "labels": ["красный крестик умер"],
+        "tags": ["умер", "конец", "жесть"],
+        "last_seen_at": "2026-08-15T10:00:00+00:00",
+    }
+
+    def test_the_governed_word_goes_with_the_particle(self) -> None:
+        self.assertEqual(tokenize("отказал клиенту и не умер"), ["отказал", "клиенту"])
+        self.assertEqual(tokenize("сказал это без объяснений"), ["сказал"])
+        self.assertEqual(tokenize("ни одной знакомой улицы"), ["улицы"])
+
+    def test_function_words_do_not_shield_the_governed_word(self) -> None:
+        self.assertEqual(tokenize("это было не очень хорошо"), [])
+
+    def test_the_opposite_emoji_is_no_longer_found(self) -> None:
+        # Regression: this line scored 5.0 on a picture meaning the opposite,
+        # the highest of any emoji in its post.
+        self.assertEqual(search_emojis([self.DEAD], "Впервые отказал клиенту и не умер"), [])
+        self.assertTrue(search_emojis([self.DEAD], "проект умер тихо"))
+
+    def test_an_affirmative_line_is_untouched(self) -> None:
+        self.assertEqual(tokenize("Спасибо, что были рядом"), ["спасибо", "рядом"])
+
+    def test_the_bare_no_is_left_alone(self) -> None:
+        # A post writes "нет" as an answer as often as a negation, so it does
+        # not govern the next word.
+        self.assertEqual(tokenize("Сказал нет спокойно"), ["сказал", "спокойно"])
+
+
 class NegatedTagTests(unittest.TestCase):
     """A tag must not lose its "не" and start meaning the opposite."""
 
@@ -313,12 +347,13 @@ class NegatedTagTests(unittest.TestCase):
         "last_seen_at": "2026-08-15T10:00:00+00:00",
     }
 
-    def test_a_negation_written_as_two_words_would_invert(self) -> None:
-        # Why the tags were rewritten: "не" is a stop word, so a tag spelled
-        # "не знаю" is indistinguishable from "знаю" and answered "знаю, знаю"
-        # with a shrug - at the highest score in that post.
-        self.assertEqual(tokenize("не знаю"), ["знаю"])
-        self.assertEqual(tokenize("без эмоций"), ["эмоций"])
+    def test_a_negated_tag_carries_nothing(self) -> None:
+        # Why the tags were rewritten. Before the query side learned about
+        # negation, a tag spelled "не знаю" read as "знаю" and answered "знаю,
+        # знаю" with a shrug; now it reads as nothing at all. Either way it is
+        # not a word for the picture, which is what a tag has to be.
+        self.assertEqual(tokenize("не знаю"), [])
+        self.assertEqual(tokenize("без эмоций"), [])
 
     def test_the_rewritten_tag_no_longer_answers_its_opposite(self) -> None:
         self.assertEqual(search_emojis([self.SHRUG], "Выкатили в пятницу, знаю, знаю"), [])
@@ -332,7 +367,8 @@ class NumeralTests(unittest.TestCase):
     """A number in a post counts something the picture is not about."""
 
     def test_small_numerals_are_dropped(self) -> None:
-        self.assertEqual(tokenize("Три месяца не писал"), ["месяца", "писал"])
+        # "Писал" is governed by "не" and goes with it; see NegationTests.
+        self.assertEqual(tokenize("Три месяца не писал"), ["месяца"])
         self.assertEqual(tokenize("Отключить на два часа"), ["отключить", "часа"])
         self.assertEqual(tokenize("Первое — разборы проектов"), ["разборы", "проектов"])
 
